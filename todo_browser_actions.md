@@ -1,4 +1,4 @@
-Core Browser Control
+Core Browser Control - ANAY
 
 click <selector> - Click any element
 right_click <selector> - Right-click context menu
@@ -20,7 +20,7 @@ drag <from> <to> - Drag and drop elements
 upload <selector> <file> - Upload file
 download <url> [filename] - Download file
 
-Navigation & Page Control
+Navigation & Page Control - PRATYUSH
 
 go <url> - Navigate to URL
 back - Browser back button
