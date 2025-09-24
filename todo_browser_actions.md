@@ -1,9 +1,5 @@
 Core Browser Control - ANAY
 
-click <selector> - Click any element
-right_click <selector> - Right-click context menu
-double_click <selector> - Double-click element
-middle_click <selector> - Middle mouse button click
 type <selector> <text> - Type text into field
 press <key> - Press keyboard key (Enter, Tab, Esc, etc.)
 key_combo <keys> - Key combinations (Ctrl+C, Alt+Tab)
