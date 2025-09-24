@@ -251,6 +251,136 @@ class BrowserAgent:
             self.log_action("history_list", "Failed to display history", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to display history: {str(e)}")
 
+    #Navigation
+    def scroll(self, direction: str, amount: int = 100): #Default is 100 Pixels
+        """
+        Scroll the page in the specified direction by a certain amount of pixels.
+        """
+        try:
+            direction = direction.lower()
+            if direction not in ("up", "down", "left", "right"):
+                raise ValueError("Direction must be one of 'up', 'down', 'left', or 'right'.")
+
+            script_map = {
+                "up": f"window.scrollBy(0, -{amount});",
+                "down": f"window.scrollBy(0, {amount});",
+                "left": f"window.scrollBy(-{amount}, 0);",
+                "right": f"window.scrollBy({amount}, 0);"
+            }
+
+            self.page.evaluate(script_map[direction])
+            self.log_action("scroll", f"Direction: {direction}, Amount: {amount}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Scrolled {direction} by {amount} pixels.")
+
+        except Exception as e:
+            self.log_action("scroll", f"Direction: {direction}, Amount: {amount}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll {direction}: {str(e)}")
+    
+    def scroll_top(self):
+        """Scroll to the top of the page."""
+        try:
+            self.page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'});")
+            self.log_action("scroll_top", "Scrolled to top", success=True)
+            console.print("[bold green][INFO][/bold green] Scrolled to top of the page.")
+        except Exception as e:
+            self.log_action("scroll_top", "Failed to scroll to top", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll to top: {str(e)}")
+
+
+    def scroll_bottom(self):
+        """Scroll to the bottom of the page."""
+        try:
+            self.page.evaluate("window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});")
+            self.log_action("scroll_bottom", "Scrolled to bottom", success=True)
+            console.print("[bold green][INFO][/bold green] Scrolled to bottom of the page.")
+        except Exception as e:
+            self.log_action("scroll_bottom", "Failed to scroll to bottom", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll to bottom: {str(e)}")
+
+    def move_to(self, x: str, y: str):
+        """
+        Move the mouse pointer to the specified (x, y) coordinates.
+        """
+        try:
+            x_coord = int(x)
+            y_coord = int(y)
+            self.page.mouse.move(x_coord, y_coord)
+            self.log_action("move_to", f"Moved mouse to ({x_coord}, {y_coord})", success=True)
+            console.print(f"[bold green][INFO][/bold green] Mouse moved to ({x_coord}, {y_coord}).")
+        except Exception as e:
+            self.log_action("move_to", f"Failed to move mouse to ({x}, {y})", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to move mouse to ({x}, {y}): {str(e)}")
+
+    def page_up(self): #Need to increase the magnitude
+        """Scroll the page up by one page height."""
+        try:
+            self.page.keyboard.press("PageUp")
+            self.log_action("page_up", "Scrolled page up", success=True)
+            console.print("[bold green][INFO][/bold green] Page scrolled up.")
+        except Exception as e:
+            self.log_action("page_up", "Failed to scroll page up", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll page up: {str(e)}")
+
+
+    def page_down(self): #Need to increase the magnitude
+        """Scroll the page down by one page height."""
+        try:
+            self.page.keyboard.press("PageDown")
+            self.log_action("page_down", "Scrolled page down", success=True)
+            console.print("[bold green][INFO][/bold green] Page scrolled down.")
+        except Exception as e:
+            self.log_action("page_down", "Failed to scroll page down", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll page down: {str(e)}")
+
+    def scroll_by(self, x: str, y: str):
+        """
+        Scroll the page by the specified number of pixels horizontally and vertically.
+        """
+        try:
+            x_val = int(x)
+            y_val = int(y)
+            self.page.evaluate(f"window.scrollBy({x_val}, {y_val});")
+            self.log_action("scroll_by", f"Scrolled by X: {x_val}px, Y: {y_val}px", success=True)
+            console.print(f"[bold green][INFO][/bold green] Scrolled by X: {x_val}px, Y: {y_val}px.")
+        except Exception as e:
+            self.log_action("scroll_by", f"Failed to scroll by X: {x}px, Y: {y}px", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll by pixels: {str(e)}")
+
+    def hover(self, selector: str): #Not Working
+        """
+        Perform mouse hover over the element matching the CSS selector.
+        """
+        try:
+            # Wait for the element to be visible before hovering
+            self.page.wait_for_selector(selector, state="visible", timeout=10000)
+            self.page.hover(selector)
+            self.log_action("hover", f"Hovered over selector: {selector}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Hovered over element matching selector: '{selector}'")
+        except Exception as e:
+            self.log_action("hover", f"Failed to hover over selector: {selector}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to hover over selector '{selector}': {str(e)}")
+
+    def scroll_to(self, selector: str): #Scroll To
+        """
+        Scroll the page to the element matching the CSS selector.
+        """
+        try:
+            # Wait for the element to be visible before scrolling
+            self.page.wait_for_selector(selector, state="visible", timeout=10000)
+            
+            # Scroll element into view smoothly and center it vertically
+            self.page.eval_on_selector(selector, "element => element.scrollIntoView({behavior: 'smooth', block: 'center'})")
+            
+            self.log_action("scroll_to", f"Selector: {selector}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Scrolled to element matching selector: '{selector}'")
+        except Exception as e:
+            self.log_action("scroll_to", f"Selector: {selector}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to scroll to selector '{selector}': {str(e)}")
+
+
+
+
+
 COMMANDS = {
     "go": BrowserAgent.go_to,
     "history": BrowserAgent.get_command_history,
@@ -264,6 +394,15 @@ COMMANDS = {
     "title": BrowserAgent.title,
     "previous": BrowserAgent.previous_url,
     "history": BrowserAgent.history_list,
+    "scroll": BrowserAgent.scroll,
+    "scroll_top": BrowserAgent.scroll_top,      
+    "scroll_bottom": BrowserAgent.scroll_bottom, 
+    "move": BrowserAgent.move_to,
+    "page_up": BrowserAgent.page_up,
+    "page_down": BrowserAgent.page_down,
+    "scroll_by": BrowserAgent.scroll_by,
+    "hover": BrowserAgent.hover,
+    "scroll_to": BrowserAgent.scroll_to,
 }
 
 

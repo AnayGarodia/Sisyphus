@@ -22,15 +22,10 @@ hard_refresh - Force reload (Ctrl+F5) #Not Working
 
 Scrolling & Movement - PRATYUSH
 
-scroll <direction> - Scroll up/down/left/right
-scroll_to <selector> - Scroll to element
-scroll_by <x> <y> - Scroll by pixels
-scroll_top - Scroll to top of page
-scroll_bottom - Scroll to bottom of page
-page_up - Page up
-page_down - Page down
-hover <selector> - Mouse hover
-move_to <x> <y> - Move mouse to coordinates
+scroll_to <selector> - Scroll to element #Not Working
+page_up - Page up #Need to Increase Magnitude
+page_down - Page down #Need to Increase Magnitude
+hover <selector> - Mouse hover #Not Working
 
 Element Discovery & Inspection
 
