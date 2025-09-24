@@ -6,7 +6,8 @@ from datetime import datetime
 from rich.logging import RichHandler
 import logging
 import shlex
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,8 +76,12 @@ class BrowserAgent:
         else:
             error_logger.error(f"Action Failed: {action} - {details}")
 
-    def get_command_history(self, limit: int = 10):
+    def get_command_history(self, limit=10):
         """Get recent command history"""
+        if isinstance(limit, str):
+            limit = int(limit) if limit.isdigit() else 10
+        elif limit is None:
+            limit = 10
         recent = self.command_history[-limit:]
         console.print("\n[bold cyan]Recent Commands:[/bold cyan]")
         for entry in recent:
@@ -122,7 +127,15 @@ class BrowserAgent:
             error_logger.error(f"Error closing browser: {str(e)}")
             console.print(f"[bold red][ERROR][/bold red] Error closing browser: {str(e)}")
 
+
+COMMANDS = {
+    "go": BrowserAgent.go_to,
+    "history": BrowserAgent.get_command_history,
+    "stats": BrowserAgent.get_action_stats,
+}
+
 if __name__ == "__main__":
+
     agent = BrowserAgent(headless=False)
 
     try: 
@@ -140,34 +153,23 @@ if __name__ == "__main__":
                 # Log the command attempt
                 command_start_time = datetime.now()
 
-                try:
-                    if cmd in ['exit', 'quit', 'q']:
-                        agent.log_command(cmd, args, success=True)
-                        break
+                if cmd in ['exit', 'quit', 'q']:
+                    agent.log_command(cmd, args, success=True)
+                    break
 
-                    elif cmd == 'go' and args:
-                        agent.go_to(args[0])
+                if cmd in COMMANDS:
+                    try:
+                        COMMANDS[cmd](agent, *args)
                         agent.log_command(cmd, args, success=True)
-
-                    elif cmd == 'history':
-                        limit = int(args[0]) if args and args[0].isdigit() else 10
-                        agent.get_command_history(limit)
-                        agent.log_command(cmd, args, success=True)
-
-                    elif cmd == 'stats':
-                        agent.get_action_stats()
-                        agent.log_command(cmd, args, success=True)
-                        
-                    else:
-                        error_msg = f"Unknown command: {cmd}"
-                        agent.log_command(cmd, args, success=False, error=error_msg)
-                        console.print(f"[bold red][ERROR][/bold red] {error_msg}")
-
-                except Exception as e:
-                    # Log command failure
-                    agent.log_command(cmd, args, success=False, error=str(e))
-                    raise
+            
+                    except Exception as e:
+                        # Log command failure
+                        agent.log_command(cmd, args, success=False, error=str(e))
+                        print(f"Error: {e}")
                 
+                else:
+                    console.print(f"[bold red][ERROR][/bold red] Unknown command: {cmd}")
+                    agent.log_command(cmd, args, success=False, error="Unknown command")
 
 
             except KeyboardInterrupt:
