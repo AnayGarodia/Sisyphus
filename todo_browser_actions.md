@@ -22,19 +22,9 @@ download <url> [filename] - Download file
 
 Navigation & Page Control - PRATYUSH
 
-go <url> - Navigate to URL
-back - Browser back button 
-forward - Browser forward button 
-refresh - Reload page - Done
 hard_refresh - Force reload (Ctrl+F5) #Not Working
-stop - Stop page loading
-home - Go to homepage
-url - Get current URL
-title - Get page title
-previous_url - Get previous URL from history
-history_list - Get browser history
 
-Scrolling & Movement
+Scrolling & Movement - PRATYUSH
 
 scroll <direction> - Scroll up/down/left/right
 scroll_to <selector> - Scroll to element
