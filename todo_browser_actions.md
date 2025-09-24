@@ -23,10 +23,10 @@ download <url> [filename] - Download file
 Navigation & Page Control - PRATYUSH
 
 go <url> - Navigate to URL
-back - Browser back button
-forward - Browser forward button
-refresh - Reload page
-hard_refresh - Force reload (Ctrl+F5)
+back - Browser back button 
+forward - Browser forward button 
+refresh - Reload page - Done
+hard_refresh - Force reload (Ctrl+F5) #Not Working
 stop - Stop page loading
 home - Go to homepage
 url - Get current URL

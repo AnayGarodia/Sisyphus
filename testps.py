@@ -128,15 +128,144 @@ class BrowserAgent:
             console.print(f"[bold red][ERROR][/bold red] Error closing browser: {str(e)}")
 
     def refresh(self):
-        pass
+        """Reload the current page."""
+        try:
+            self.page.reload(wait_until="domcontentloaded", timeout=30000)
+            self.log_action("refresh", f"URL: {self.page.url}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Page refreshed: {self.page.url}")
+        except Exception as e:
+            self.log_action("refresh", f"URL: {self.page.url}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to refresh page: {str(e)}")
 
+    def back(self):
+        """Navigate to the previous page in browser history."""
+        try:
+            response = self.page.go_back(wait_until="domcontentloaded", timeout=30000)
+            if response is not None:
+                self.log_action("back", f"URL: {self.page.url}", success=True)
+                console.print(f"[bold green][INFO][/bold green] Navigated back to: {self.page.url}")
+            else:
+                self.log_action("back", f"URL: {self.page.url}", success=False)
+                console.print(f"[bold yellow][WARN][/bold yellow] Cannot navigate back (no previous page or cross-origin).")
+        except Exception as e:
+            self.log_action("back", f"URL: {self.page.url}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to go back: {str(e)}")
+
+    def forward(self):
+        """Navigate to the next page in browser history."""
+        try:
+            response = self.page.go_forward(wait_until="domcontentloaded", timeout=30000)
+            if response is not None:
+                self.log_action("forward", f"URL: {self.page.url}", success=True)
+                console.print(f"[bold green][INFO][/bold green] Navigated forward to: {self.page.url}")
+            else:
+                self.log_action("forward", f"URL: {self.page.url}", success=False)
+                console.print(f"[bold yellow][WARN][/bold yellow] Cannot navigate forward (no next page or cross-origin).")
+        except Exception as e:
+            self.log_action("forward", f"URL: {self.page.url}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to go forward: {str(e)}")
+
+    def stop(self):
+        """Stop the page loading."""
+        try:
+            self.page.context._impl_obj._channel.send("Page.stopLoading")
+            self.log_action("stop", f"URL: {self.page.url}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Stopped page loading: {self.page.url}")
+        except Exception as e:
+            self.log_action("stop", f"URL: {self.page.url}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to stop page loading: {str(e)}")
+
+
+    def home(self):
+        """Navigate to the homepage (default to https://www.google.com)."""
+        homepage = "https://www.google.com"
+        try:
+            self.page.goto(homepage, wait_until="domcontentloaded", timeout=30000)
+            self.log_action("home", f"URL: {homepage}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Navigated to homepage: {homepage}")
+        except Exception as e:
+            self.log_action("home", f"URL: {homepage}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to navigate to homepage: {str(e)}")
+
+
+    def url(self):
+        """Get the current page URL."""
+        try:
+            current_url = self.page.url
+            self.log_action("url", f"URL: {current_url}", success=True)
+            console.print(f"[bold cyan][INFO][/bold cyan] Current URL: {current_url}")
+            return current_url
+        except Exception as e:
+            self.log_action("url", "Failed to get current URL", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to get current URL: {str(e)}")
+            return None
+
+
+    def title(self):
+        """Get the current page title."""
+        try:
+            page_title = self.page.title()
+            self.log_action("title", f"Title: {page_title}", success=True)
+            console.print(f"[bold cyan][INFO][/bold cyan] Page Title: {page_title}")
+            return page_title
+        except Exception as e:
+            self.log_action("title", "Failed to get page title", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to get page title: {str(e)}")
+            return None
+
+
+    def previous_url(self): 
+        """Get the previous URL from command history if available."""
+        try:
+            # Filter command history for successful 'go' or navigation commands that changed URL
+            urls = [
+                entry['args'][0] for entry in self.command_history
+                if entry['command'] == 'go' and entry['success']
+            ]
+            if len(urls) < 2:
+                console.print("[bold yellow][WARN][/bold yellow] No previous URL in history.")
+                self.log_action("previous_url", "No previous URL found", success=False)
+                return None
+            prev_url = urls[-2]
+            self.log_action("previous_url", f"Previous URL: {prev_url}", success=True)
+            console.print(f"[bold cyan][INFO][/bold cyan] Previous URL: {prev_url}")
+            return prev_url
+        except Exception as e:
+            self.log_action("previous_url", "Failed to get previous URL", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to get previous URL: {str(e)}")
+            return None
+
+
+    def history_list(self):
+        """Get the browser navigation command history."""
+        try:
+            console.print("\n[bold cyan]Browser Navigation History:[/bold cyan]")
+            for entry in self.command_history:
+                if entry['command'] == 'go':
+                    status = "✓" if entry['success'] else "✗"
+                    timestamp = entry['timestamp']
+                    url = entry['args'][0] if entry['args'] else "N/A"
+                    console.print(f"  {status} [{timestamp}] {url}")
+            self.log_action("history_list", "Displayed browser history", success=True)
+        except Exception as e:
+            self.log_action("history_list", "Failed to display history", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to display history: {str(e)}")
 
 COMMANDS = {
     "go": BrowserAgent.go_to,
     "history": BrowserAgent.get_command_history,
     "stats": BrowserAgent.get_action_stats,
     "refresh": BrowserAgent.refresh,
+    "back": BrowserAgent.back,
+    "forward": BrowserAgent.forward,
+    "stop": BrowserAgent.stop,
+    "home": BrowserAgent.home,
+    "url": BrowserAgent.url,
+    "title": BrowserAgent.title,
+    "previous": BrowserAgent.previous_url,
+    "history": BrowserAgent.history_list,
 }
+
 
 if __name__ == "__main__":
 
