@@ -496,86 +496,6 @@ class BrowserAgent(BaseBrowserAgent):
             self.log_action("click", f"Selector: {selector}", success=False)
             return False
 
-
-    def expand_dropdown(self, selector):
-        """Expand a dropdown or collapsible element"""
-        try:
-            element = None
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-            else:
-                element = self.page.query_selector(selector)
-            
-            if not element:
-                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
-                return False
-            
-            # Check if it's already expanded
-            is_expanded = element.get_attribute('aria-expanded')
-            if is_expanded == 'true':
-                console.print(f"[bold yellow][INFO][/bold yellow] Dropdown {selector} is already expanded")
-                return True
-            
-            # Try to expand the dropdown
-            element.click()
-            
-            # Wait a moment for the dropdown to expand
-            self.page.wait_for_timeout(500)
-            
-            # Verify expansion
-            is_expanded_after = element.get_attribute('aria-expanded')
-            if is_expanded_after == 'true':
-                console.print(f"[bold green][INFO][/bold green] Successfully expanded dropdown {selector}")
-                self.log_action("expand_dropdown", f"Selector: {selector}", success=True)
-                return True
-            else:
-                console.print(f"[bold yellow][WARN][/bold yellow] Dropdown {selector} may have been activated, but expansion state unclear")
-                self.log_action("expand_dropdown", f"Selector: {selector}", success=True)
-                return True
-                
-        except Exception as e:
-            self.log_action("expand_dropdown", f"Selector: {selector}", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to expand dropdown {selector}: {str(e)}")
-            return False
-
-    def collapse_dropdown(self, selector):
-        """Collapse an expanded dropdown"""
-        try:
-            element = None
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-            else:
-                element = self.page.query_selector(selector)
-            
-            if not element:
-                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
-                return False
-            
-            # Check if it's already collapsed
-            is_expanded = element.get_attribute('aria-expanded')
-            if is_expanded == 'false':
-                console.print(f"[bold yellow][INFO][/bold yellow] Dropdown {selector} is already collapsed")
-                return True
-            
-            # Try to collapse by clicking again or pressing Escape
-            if is_expanded == 'true':
-                element.click()
-            else:
-                # Try pressing Escape key
-                self.page.keyboard.press('Escape')
-            
-            # Wait a moment
-            self.page.wait_for_timeout(500)
-            
-            console.print(f"[bold green][INFO][/bold green] Attempted to collapse dropdown {selector}")
-            self.log_action("collapse_dropdown", f"Selector: {selector}", success=True)
-            return True
-                
-        except Exception as e:
-            self.log_action("collapse_dropdown", f"Selector: {selector}", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to collapse dropdown {selector}: {str(e)}")
-            return False
-
     def select_dropdown_option(self, dropdown_selector, option_text):
         """Select an option from a dropdown by text content"""
         try:
@@ -628,60 +548,6 @@ class BrowserAgent(BaseBrowserAgent):
             self.log_action("select_dropdown_option", f"Dropdown: {dropdown_selector}, Option: {option_text}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to select dropdown option: {str(e)}")
             return False
-
-    def scan_dropdown_options(self, dropdown_selector):
-        """Scan and display options available in a dropdown"""
-        try:
-            # Expand the dropdown first
-            if not self.expand_dropdown(dropdown_selector):
-                return
-            
-            # Wait for options to load
-            self.page.wait_for_timeout(500)
-            
-            # Look for dropdown options
-            option_selectors = [
-                f"{dropdown_selector} option",
-                "[role='option']",
-                "li[role='option']",
-                "div[role='option']",
-                ".dropdown-item",
-                ".dropdown-option"
-            ]
-            
-            all_options = []
-            for selector in option_selectors:
-                try:
-                    options = self.page.query_selector_all(selector)
-                    for option in options:
-                        if option.is_visible():
-                            text = option.inner_text().strip()
-                            value = option.get_attribute('value') or ''
-                            if text and text not in [opt['text'] for opt in all_options]:
-                                all_options.append({
-                                    'text': text,
-                                    'value': value,
-                                    'element': option
-                                })
-                except Exception:
-                    continue
-            
-            if all_options:
-                console.print(f"\n[bold blue][DROPDOWN OPTIONS][/bold blue] Available options in {dropdown_selector}:")
-                console.print("=" * 60)
-                for i, option in enumerate(all_options, 1):
-                    value_str = f" (value: {option['value']})" if option['value'] and option['value'] != option['text'] else ""
-                    console.print(f"  {i:>2}. {option['text']}{value_str}")
-                console.print("=" * 60)
-                console.print(f"[bold yellow][TIP][/bold yellow] Use 'select_option {dropdown_selector} <option_text>' to select")
-            else:
-                console.print(f"[bold yellow][WARN][/bold yellow] No options found in dropdown {dropdown_selector}")
-            
-            self.log_action("scan_dropdown_options", f"Dropdown: {dropdown_selector}, Found: {len(all_options)} options", success=True)
-            
-        except Exception as e:
-            self.log_action("scan_dropdown_options", f"Dropdown: {dropdown_selector}", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to scan dropdown options: {str(e)}")
 
     def wait_for_dynamic_content(self, timeout=5000):
         """Wait for dynamic content to load on the page"""
@@ -753,10 +619,7 @@ class BrowserAgent(BaseBrowserAgent):
                 "double_click <selector>": "Double-click an element", 
                 "middle_click <selector>": "Middle-click an element",
                 "type <selector> '<text>'": "Type text into an input field",
-                "expand <selector>": "Expand a dropdown or collapsible element",
-                "collapse <selector>": "Collapse an expanded dropdown",
                 "select_option <dropdown> '<option>'": "Select option from dropdown by text",
-                "scan_dropdown <selector>": "Show all available options in a dropdown",
                 "wait [timeout_ms]": "Wait for dynamic content to load (default 5000ms)",
                 "help [command]": "Show this help message or help for specific command",
                 "quit": "Exit the browser agent",
@@ -820,10 +683,7 @@ COMMANDS = {
     "type": BrowserAgent.type_text,
     
     # Dropdown-specific commands
-    "expand": BrowserAgent.expand_dropdown,
-    "collapse": BrowserAgent.collapse_dropdown,
     "select_option": BrowserAgent.select_dropdown_option,
-    "scan_dropdown": BrowserAgent.scan_dropdown_options,
     
     # Utility commands
     "wait": BrowserAgent.wait_for_dynamic_content,

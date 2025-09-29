@@ -10,234 +10,78 @@ import shlex
 from typing import Any, Dict, List, Optional
 
 class BrowserAgent(BaseBrowserAgent):
-
-    # INITIALIZING BROWSER AGENT 
-    def __init__(self, headless=False):
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=headless)
-        self.context = self.browser.new_context()
-        self.page = self.context.new_page()
-        # Command and action tracking
-        self.command_history: List[Dict[str, Any]] = []
-        self.action_count = 0
-        self.element_map = {}
-        
-        action_logger.info("Browser started successfully")
-
-        console.print("[bold green][INFO][/bold green] Browser started. Type 'help' for commands.")
-
-        """Get the complete browser navigation history including all navigation actions."""
-        try:
-            console.print("\n[bold cyan]Complete Navigation History:[/bold cyan]")
-            console.print("=" * 80)
-            
-            navigation_entries = []
-            
-            # Track all navigation-related commands
-            for entry in self.command_history:
-                if entry['command'] in ['go', 'go_to', 'back', 'forward', 'home', 'refresh']:
-                    status = "✓" if entry['success'] else "✗"
-                    timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Just time part
-                    
-                    if entry['command'] in ['go', 'go_to'] and entry['args']:
-                        url = entry['args'][0]
-                        if not url.startswith(("http://", "https://")):
-                            url = "http://" + url
-                        action = f"Navigate to: {url}"
-                    elif entry['command'] == 'back':
-                        action = "Back in history"
-                    elif entry['command'] == 'forward':
-                        action = "Forward in history"
-                    elif entry['command'] == 'home':
-                        action = "Navigate to: https://www.google.com"
-                    elif entry['command'] == 'refresh':
-                        action = "Page refreshed"
-                    else:
-                        action = entry['command']
-                    
-                    navigation_entries.append({
-                        'status': status,
-                        'timestamp': timestamp,
-                        'action': action,
-                        'success': entry['success']
-                    })
-            
-            if not navigation_entries:
-                console.print("[bold yellow][INFO][/bold yellow] No navigation history found.")
-                return
-            
-            # Display entries
-            for i, entry in enumerate(navigation_entries, 1):
-                color = "[green]" if entry['success'] else "[red]"
-                console.print(f"  {entry['status']} [{entry['timestamp']}] {color}{entry['action']}[/{color.strip('[]')}]")
-            
-            console.print("=" * 80)
-            console.print(f"[bold green][INFO][/bold green] Total navigation actions: {len(navigation_entries)}")
-            
-            self.log_action("history_list", "Displayed complete navigation history", success=True)
-            
-        except Exception as e:
-            self.log_action("history_list", "Failed to display navigation history", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to display navigation history: {str(e)}")
-
     def scan(self, filter_type=None, max_elements=25) -> bool:
         """Scan the page for interactive elements and assign identifiers."""
         try:
-            # Enhanced selectors for different element types
             selectors = {
                 'links': 'a[href]:not([href="#"]):not([href=""])',
                 'buttons': 'button, input[type="button"], input[type="submit"], [role="button"]:not(a)',
                 'inputs': 'input[type="text"], input[type="email"], input[type="password"], input[type="search"], textarea',
-                'selects': 'select, [role="listbox"], [role="combobox"], [role="menu"], [aria-haspopup="true"], [class*="dropdown"]',
+                'selects': 'select, [role="listbox"], [role="combobox"]',
                 'checkboxes': 'input[type="checkbox"], input[type="radio"]',
                 'other_inputs': 'input[type="file"], input[type="number"], input[type="date"], input[type="tel"]'
             }
-            
-            # If filter specified, only scan that type
+
             if filter_type and filter_type in selectors:
                 selectors = {filter_type: selectors[filter_type]}
-            
-            self.element_map = {}  # reset every scan
+
+            self.element_map = {}
             all_elements = []
-            
+            seen = set()  # track handles to prevent duplicates
+
             for element_type, selector in selectors.items():
-                try:
-                    elements = self.page.query_selector_all(selector)
-                    
-                    for element in elements:
-                        try:
-                            # Skip invisible elements
-                            if not element.is_visible():
-                                continue
-                                
-                            # Get element info
-                            tag = element.evaluate("el => el.tagName.toLowerCase()")
-                            
-                            # Special handling for dropdowns/selects
-                            if element_type == 'selects':
-                                # Try to expand dropdown to find options
-                                try:
-                                    # Check if it's a regular select element
-                                    if tag == 'select':
-                                        options = element.query_selector_all('option')
-                                        if options:
-                                            # Add the select element itself
-                                            label = self._get_element_label(element, tag, element_type)
-                                            if label:
-                                                all_elements.append({
-                                                    'label': f"{label} (dropdown)",
-                                                    'type': 'SELECT',
-                                                    'element': element,
-                                                    'tag': tag
-                                                })
-                                            
-                                            # Add individual options
-                                            for i, option in enumerate(options[:5]):  # Limit to first 5 options
-                                                option_text = option.inner_text().strip()
-                                                if option_text:
-                                                    all_elements.append({
-                                                        'label': f"↳ {option_text}",
-                                                        'type': 'OPTION',
-                                                        'element': option,
-                                                        'tag': 'option'
-                                                    })
-                                            continue
-                                    
-                                    # For custom dropdowns, try clicking to expand
-                                    elif element.get_attribute('aria-haspopup') or 'dropdown' in element.get_attribute('class', '').lower():
-                                        # Try to expand the dropdown
-                                        try:
-                                            element.click()
-                                            self.page.wait_for_timeout(500)  # Wait for dropdown to expand
-                                            
-                                            # Look for dropdown options that appeared
-                                            dropdown_options = self.page.query_selector_all(
-                                                '[role="option"], [role="menuitem"], .dropdown-item, [class*="option"]'
-                                            )
-                                            
-                                            # Add the dropdown trigger
-                                            label = self._get_element_label(element, tag, element_type)
-                                            if label:
-                                                all_elements.append({
-                                                    'label': f"{label} (dropdown)",
-                                                    'type': 'DROPDOWN',
-                                                    'element': element,
-                                                    'tag': tag
-                                                })
-                                            
-                                            # Add visible options
-                                            for option in dropdown_options[:5]:  # Limit options
-                                                if option.is_visible():
-                                                    option_text = option.inner_text().strip()
-                                                    if option_text:
-                                                        all_elements.append({
-                                                            'label': f"↳ {option_text}",
-                                                            'type': 'OPTION',
-                                                            'element': option,
-                                                            'tag': option.evaluate("el => el.tagName.toLowerCase()")
-                                                        })
-                                            
-                                            # Try to close the dropdown
-                                            element.click()
-                                            self.page.wait_for_timeout(200)
-                                            continue
-                                        except:
-                                            pass
-                                except:
-                                    pass
-                            
-                            # Regular element handling
-                            label = self._get_element_label(element, tag, element_type)
-                            
-                            # Skip if we couldn't create a meaningful label
-                            if not label or len(label.strip()) == 0:
-                                continue
-                            
-                            # Determine element type for display
-                            display_type = self._get_display_type(tag, element, element_type)
-                            
-                            all_elements.append({
-                                'label': label,
-                                'type': display_type,
-                                'element': element,
-                                'tag': tag
-                            })
-                            
-                        except Exception:
+                elements = self.page.query_selector_all(selector)
+
+                for element in elements:
+                    try:
+                        if not element.is_visible():
                             continue
-                            
-                except Exception:
-                    continue
-            
-            # Sort by type priority and limit results
-            type_priority = {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'DROPDOWN': 3, 'OPTION': 4, 'LINK': 5, 'CHECKBOX': 6, 'OTHER': 7}
+
+                        # unique handle id to prevent duplicates
+                        handle_id = element.evaluate("el => el.outerHTML.slice(0,200)")
+                        if handle_id in seen:
+                            continue
+                        seen.add(handle_id)
+
+                        tag = element.evaluate("el => el.tagName.toLowerCase()")
+                        label = self._get_element_label(element, tag, element_type)
+                        if not label:
+                            continue
+
+                        display_type = self._get_display_type(tag, element, element_type)
+                        all_elements.append({
+                            'label': label,
+                            'type': display_type,
+                            'element': element,
+                            'tag': tag
+                        })
+
+                    except Exception:
+                        continue
+
+            type_priority = {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'LINK': 4, 'CHECKBOX': 5, 'OTHER': 6}
             all_elements.sort(key=lambda x: (type_priority.get(x['type'], 999), x['label']))
-            
-            # Limit results
-            if len(all_elements) > max_elements:
+
+            truncated = len(all_elements) > max_elements
+            if truncated:
                 all_elements = all_elements[:max_elements]
-                truncated = True
-            else:
-                truncated = False
-            
-            # Store in element map
+
             for i, elem in enumerate(all_elements, start=1):
                 self.element_map[i] = {
                     "label": elem['label'],
-                    "type": elem['type'], 
+                    "type": elem['type'],
                     "handle": elem['element']
                 }
-            
-            # Display results
+
             self._display_clean_scan_results(all_elements, truncated, len(all_elements), filter_type)
-            
             self.log_action("scan", f"Found {len(all_elements)} interactive elements", success=True)
             return True
-    
+
         except Exception as e:
             console.print(f"[bold red][ERROR][/bold red] Scan failed: {str(e)}")
             self.log_action("scan", "Scan failed", success=False)
             return False
+
 
     def _get_element_label(self, element, tag, element_type):
         """Create a meaningful label for an element"""
@@ -698,37 +542,6 @@ class BrowserAgent(BaseBrowserAgent):
         except Exception as e:
             self.log_action("wait_for_dynamic_content", f"Timeout: {timeout}ms", success=False)
             console.print(f"[bold yellow][WARN][/bold yellow] Timeout waiting for dynamic content: {str(e)}")
-
-    def type_text(self, selector, text, clear_first=True):
-        """Type text into an input field"""
-        try:
-            element = None
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-            else:
-                element = self.page.query_selector(selector)
-            
-            if not element:
-                console.print(f"[bold red][ERROR][/bold red] Input element not found: {selector}")
-                return False
-            
-            # Clear existing text if requested
-            if clear_first:
-                element.click()
-                self.page.keyboard.press('Control+a')
-                self.page.keyboard.press('Delete')
-            
-            # Type the new text
-            element.type(text)
-            
-            console.print(f"[bold green][INFO][/bold green] Typed text into {selector}: '{text[:50]}{'...' if len(text) > 50 else ''}'")
-            self.log_action("type_text", f"Selector: {selector}, Text length: {len(text)}", success=True)
-            return True
-            
-        except Exception as e:
-            self.log_action("type_text", f"Selector: {selector}", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to type text: {str(e)}")
-            return False
         
     def help(self, command=None):
         """Display help information for commands"""

@@ -1,6 +1,5 @@
 Core Browser Control - ANAY
 
-type <selector> <text> - Type text into field
 press <key> - Press keyboard key (Enter, Tab, Esc, etc.)
 key_combo <keys> - Key combinations (Ctrl+C, Alt+Tab)
 fill <selector> <text> - Fill form field

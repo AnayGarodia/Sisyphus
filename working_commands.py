@@ -31,16 +31,61 @@ console = Console()
 class BaseBrowserAgent:
     def __init__(self, headless=False):
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=headless)
-        self.context = self.browser.new_context()
+        
+        # Enhanced browser context to avoid detection
+        self.browser = self.playwright.chromium.launch(
+            headless=headless,
+            args=[
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--start-maximized'
+            ]
+        )
+        
+        # Create context with human-like settings
+        self.context = self.browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            extra_http_headers={
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Connection': 'keep-alive'
+            },
+            java_script_enabled=True,
+            permissions=['geolocation', 'notifications']
+        )
+        
         self.page = self.context.new_page()
-        # Command and action tracking
+        
+        # Hide automation indicators
+        self.page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+            
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            
+            window.chrome = {
+                runtime: {},
+            };
+        """)
+        
+        # Rest of your initialization code...
         self.command_history: List[Dict[str, Any]] = []
         self.action_count = 0
         self.element_map = {}
         
         action_logger.info("Browser started successfully")
-
         console.print("[bold green][INFO][/bold green] Browser started. Type 'help' for commands.")
 
     # LOGGING METHODS
@@ -333,6 +378,75 @@ class BaseBrowserAgent:
             self.log_action("right_click", f"Selector: {selector}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to right-click {selector}: {str(e)}")
 
+    def type_text(self, selector, text, clear_first=True):
+        """Type text into an input field with human-like timing"""
+        try:
+            element = None
+            
+            # Handle numeric selectors for element_map indices
+            if selector.isdigit():
+                index = int(selector)
+                if hasattr(self, 'element_map') and index in self.element_map:
+                    element_info = self.element_map[index]
+                    element = element_info["handle"]
+                else:
+                    console.print(f"[bold red][ERROR][/bold red] Element at index {index} not found in element_map")
+                    return False
+            else:
+                # Try to find by label match in element_map first
+                if hasattr(self, 'element_map'):
+                    for idx, element_info in self.element_map.items():
+                        if element_info["label"].lower() == selector.lower():
+                            element = element_info["handle"]
+                            break
+                
+                # If not found by label, try as CSS selector
+                if not element:
+                    element = self.page.query_selector(selector)
+            
+            if not element:
+                console.print(f"[bold red][ERROR][/bold red] Input element not found: {selector}")
+                return False
+            
+            # Always clear the field first - multiple methods to ensure it's cleared
+            element.click()
+            self.page.wait_for_timeout(100)  # Small delay after click
+            
+            # Method 1: Select all and delete
+            element.press('Control+a')
+            self.page.wait_for_timeout(50)
+            element.press('Delete')
+            self.page.wait_for_timeout(50)
+            
+            # Method 2: Clear using fill with empty string (Playwright specific)
+            element.fill('')
+            self.page.wait_for_timeout(100)
+            
+            # Method 3: Additional clearing for stubborn fields
+            current_value = element.input_value()
+            if current_value:
+                # If there's still content, try more aggressive clearing
+                element.press('Control+a')
+                element.press('Backspace')
+                self.page.wait_for_timeout(50)
+            
+            # Verify field is cleared
+            final_value = element.input_value()
+            if final_value:
+                console.print(f"[bold yellow][WARN][/bold yellow] Field may not be completely cleared, remaining: '{final_value}'")
+            
+            # Type the new text with human-like delays
+            element.type(text, delay=50)  # 50ms between keystrokes
+            
+            console.print(f"[bold green][INFO][/bold green] Cleared and typed text into {selector}: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+            self.log_action("type_text", f"Selector: {selector}, Text length: {len(text)}", success=True)
+            return True
+            
+        except Exception as e:
+            self.log_action("type_text", f"Selector: {selector}", success=False)
+            console.print(f"[bold red][ERROR][/bold red] Failed to type text: {str(e)}")
+            return False
+
     def double_click(self, selector):
         """Double-click an element by selector or element ID"""
         try:
@@ -371,4 +485,4 @@ class BaseBrowserAgent:
             self.log_action("middle_click", f"Selector: {selector}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to middle-click {selector}: {str(e)}")
 
-    
+
