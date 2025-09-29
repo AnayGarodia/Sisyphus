@@ -422,7 +422,7 @@ class BrowserAgent(BaseBrowserAgent):
 
     def select_dropdown_option(self, dropdown_selector, option_text):
         """Select an option from a dropdown by text content"""
-        try:
+        try: 
             # First expand the dropdown if needed
             self.expand_dropdown(dropdown_selector)
             
