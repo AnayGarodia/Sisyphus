@@ -126,7 +126,7 @@ class BaseBrowserAgent:
         recent = self.command_history[-limit:]
         console.print("\n[bold cyan]Recent Commands:[/bold cyan]")
         for entry in recent:
-            status = "✓" if entry['success'] else "✗"
+            status = "âœ“" if entry['success'] else "âœ—"
             console.print(f"  {status} [{entry['action_id']}] {entry['command']} {' '.join(entry['args'])}")
 
     def get_action_stats(self):
@@ -302,7 +302,7 @@ class BaseBrowserAgent:
             # Track all navigation-related commands
             for entry in self.command_history:
                 if entry['command'] in ['go', 'go_to', 'back', 'forward', 'home', 'refresh']:
-                    status = "✓" if entry['success'] else "✗"
+                    status = "âœ“" if entry['success'] else "âœ—"
                     timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Just time part
                     
                     if entry['command'] in ['go', 'go_to'] and entry['args']:

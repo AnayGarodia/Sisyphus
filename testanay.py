@@ -264,7 +264,7 @@ class BrowserAgent(BaseBrowserAgent):
                         element_handle = meta["handle"]
                         break
     
-            # Case 3: fallback → treat as raw CSS
+            # Case 3: fallback â†’ treat as raw CSS
             if not element_handle:
                 element_handle = self.page.query_selector(selector_str)
     
