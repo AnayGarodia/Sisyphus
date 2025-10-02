@@ -1,5 +1,4 @@
 from playwright.sync_api import sync_playwright
-from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from datetime import datetime
@@ -8,9 +7,10 @@ import logging
 from working_commands import BaseBrowserAgent, console, action_logger, error_logger, command_logger, parse_command, Console
 import shlex
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
 
 class BrowserAgent(BaseBrowserAgent):
-    def scan(self, filter_type=None, max_elements=25) -> bool:
+    def scan(self, filter_type: Optional[str] = None, max_elements: int = 25) -> bool:
         """Scan the page for interactive elements and assign identifiers."""
         try:
             selectors = {
@@ -38,10 +38,10 @@ class BrowserAgent(BaseBrowserAgent):
                             continue
 
                         # unique handle id to prevent duplicates
-                        handle_id = element.evaluate("el => el.outerHTML.slice(0,200)")
-                        if handle_id in seen:
+                        elem_id = id(element)
+                        if elem_id in seen:
                             continue
-                        seen.add(handle_id)
+                        seen.add(elem_id)
 
                         tag = element.evaluate("el => el.tagName.toLowerCase()")
                         label = self._get_element_label(element, tag, element_type)
@@ -56,7 +56,8 @@ class BrowserAgent(BaseBrowserAgent):
                             'tag': tag
                         })
 
-                    except Exception:
+                    except Exception as e:
+                        error_logger.debug(f"Skipped element: {str(e)}")
                         continue
 
             type_priority = {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'LINK': 4, 'CHECKBOX': 5, 'OTHER': 6}
@@ -86,7 +87,6 @@ class BrowserAgent(BaseBrowserAgent):
     def _get_element_label(self, element, tag, element_type):
         """Create a meaningful label for an element"""
         try:
-            # Priority order for getting element text
             label_sources = [
                 lambda: element.get_attribute("aria-label"),
                 lambda: element.get_attribute("title"),
@@ -94,7 +94,8 @@ class BrowserAgent(BaseBrowserAgent):
                 lambda: element.get_attribute("placeholder"),
                 lambda: element.inner_text().strip(),
                 lambda: element.get_attribute("value"),
-                lambda: element.get_attribute("name")
+                lambda: element.get_attribute("name"),
+                lambda: element.get_attribute("id"),  # ADD THIS
             ]
             
             label = ""
@@ -107,24 +108,43 @@ class BrowserAgent(BaseBrowserAgent):
                 except:
                     continue
             
-            # Special handling for specific element types
+            # Special handling for links
             if element_type == 'links' and tag == 'a':
                 href = element.get_attribute("href") or ""
                 if not label and href:
-                    # Use a clean version of the href as label
                     if href.startswith(('http://', 'https://')):
-                        label = href.split('/')[-1] or href.split('/')[2]  # filename or domain
+                        label = href.split('/')[-1] or href.split('/')[2]
                     else:
                         label = href
             
             # Clean up the label
             if label:
-                # Remove excessive whitespace and newlines
                 label = ' '.join(label.split())
-                # Truncate very long labels
-                if len(label) > 60:
-                    label = label[:57] + "..."
-                
+                MAX_LABEL_LENGTH = 60
+                TRUNCATE_SUFFIX = "..."
+                if len(label) > MAX_LABEL_LENGTH:
+                    label = label[:MAX_LABEL_LENGTH - len(TRUNCATE_SUFFIX)] + TRUNCATE_SUFFIX
+            
+            # If still no label, add more context
+            if not label or label == f"Unnamed {tag}":
+                # Try to get context from parent or nearby text
+                try:
+                    parent_text = element.evaluate("""
+                        el => {
+                            const parent = el.parentElement;
+                            if (parent) {
+                                const label = parent.querySelector('label');
+                                if (label) return label.innerText;
+                                return parent.innerText.slice(0, 50);
+                            }
+                            return '';
+                        }
+                    """)
+                    if parent_text:
+                        label = parent_text.strip()[:30] + "..."
+                except:
+                    pass
+                    
             return label or f"Unnamed {tag}"
             
         except:
@@ -231,13 +251,14 @@ class BrowserAgent(BaseBrowserAgent):
             element_handle = None
     
             # Case 1: numeric index
-            if selector_str.isdigit():
-                idx = int(selector_str)
+            if isinstance(selector, int):
+                idx = selector
                 if hasattr(self, "element_map") and idx in self.element_map:
                     element_handle = self.element_map[idx]["handle"]
     
             # Case 2: label match
-            if not element_handle and hasattr(self, "element_map"):
+            elif isinstance(selector, str) and selector.strip().isdigit():
+                idx = int(selector.strip())
                 for idx, meta in self.element_map.items():
                     if meta["label"].lower() == selector_str.lower():
                         element_handle = meta["handle"]
@@ -260,13 +281,9 @@ class BrowserAgent(BaseBrowserAgent):
                 href = element_handle.get_attribute("href")
                 if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
                     # Convert relative URLs to absolute
-                    if href.startswith("/"):
-                        from urllib.parse import urlparse
-                        parsed = urlparse(self.page.url)
-                        href = f"{parsed.scheme}://{parsed.netloc}{href}"
-                    elif not href.startswith(("http://", "https://")):
-                        from urllib.parse import urljoin
+                    if not href.startswith(("javascript:", "mailto:", "tel:", "#")):
                         href = urljoin(self.page.url, href)
+                        self.page.goto(href, wait_until="domcontentloaded")
                     
                     # Navigate directly instead of clicking
                     self.page.goto(href, wait_until="domcontentloaded")
@@ -290,27 +307,8 @@ class BrowserAgent(BaseBrowserAgent):
                     console.print(f"[bold green][INFO][/bold green] Extracted URL and navigated to: {url}")
                     self.log_action("click", f"Index/Label: {selector} - Extracted navigation", success=True)
                     return True
-    
-            # Block new tab creation at the browser level
-            self.page.evaluate("""
-                () => {
-                    // Override window.open to prevent new tabs
-                    window.open = function(url, target, features) {
-                        if (url) {
-                            window.location.href = url;
-                        }
-                        return window;
-                    };
-                    
-                    // Override target="_blank" behavior
-                    document.addEventListener('click', function(e) {
-                        if (e.target.tagName === 'A' && e.target.target === '_blank') {
-                            e.preventDefault();
-                            window.location.href = e.target.href;
-                        }
-                    }, true);
-                }
-            """)
+
+            
     
             # Remove problematic attributes before clicking
             element_handle.evaluate("""
@@ -556,7 +554,6 @@ class BrowserAgent(BaseBrowserAgent):
                 "home": "Navigate to home page (Google)",
                 "url": "Display the current page URL",
                 "title": "Display the current page title", 
-                "previous": "Show the previous URL from navigation history",
                 "history [limit]": "Show recent command history (default 10)",
                 "url_history": "Show complete URL navigation history",
                 "stats": "Show action statistics and session info",
@@ -619,7 +616,6 @@ COMMANDS = {
     # Information commands
     "url": BrowserAgent.url,
     "title": BrowserAgent.title,
-    "previous": BrowserAgent.previous_url,
     "history": BrowserAgent.get_command_history,
     "url_history": BrowserAgent.history_list,
     "stats": BrowserAgent.get_action_stats,
@@ -630,7 +626,7 @@ COMMANDS = {
     "right_click": BrowserAgent.right_click,
     "double_click": BrowserAgent.double_click,
     "middle_click": BrowserAgent.middle_click,
-    "type": BrowserAgent.type_text,
+    "type": BrowserAgent.type,
     
     # Dropdown-specific commands
     "expand": BrowserAgent.expand_dropdown,

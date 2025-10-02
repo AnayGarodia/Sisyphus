@@ -23,40 +23,34 @@ error_logger = logging.getLogger("errors")
 def parse_command(command_line: str) -> List[str]:
     try:
         return shlex.split(command_line)
-    except ValueError:
-        return command_line.split()
+    except ValueError as e:
+        console.print(f"[bold red][ERROR][/bold red] Invalid command syntax: {e}")
+        console.print("[bold yellow][TIP][/bold yellow] Use quotes for text with spaces: type 1 'hello world'")
+        return []  # Return empty list to signal error
 
 console = Console()
 
 class BaseBrowserAgent:
-    def __init__(self, headless=False):
+
+    DEFAULT_TIMEOUT = 30000
+    DEFAULT_SHORT_WAIT = 500
+
+
+    def __init__(self, headless=False, timeout=DEFAULT_TIMEOUT):
+        self.timeout = timeout
         self.playwright = sync_playwright().start()
         
         # Enhanced browser context to avoid detection
         self.browser = self.playwright.chromium.launch(
             headless=headless,
             args=[
-                '--no-first-run',
-                '--no-default-browser-check',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--start-maximized'
             ]
         )
         
         # Create context with human-like settings
         self.context = self.browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            extra_http_headers={
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Connection': 'keep-alive'
-            },
-            java_script_enabled=True,
-            permissions=['geolocation', 'notifications']
+            viewport={'width': 1920, 'height': 1080}
         )
         
         self.page = self.context.new_page()
@@ -66,18 +60,24 @@ class BaseBrowserAgent:
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined,
             });
-            
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
-            
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
-            });
-            
-            window.chrome = {
-                runtime: {},
+        """)
+
+        self.page.add_init_script("""
+            // Override window.open
+            window.open = function(url, target, features) {
+                if (url) {
+                    window.location.href = url;
+                }
+                return window;
             };
+            
+            // Override target="_blank"
+            document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && e.target.target === '_blank') {
+                    e.preventDefault();
+                    window.location.href = e.target.href;
+                }
+            }, true);
         """)
         
         # Rest of your initialization code...
@@ -141,13 +141,53 @@ class BaseBrowserAgent:
         console.print(f"  Failed: {failed}")
 
     # BROWSER ACTIONS
+    def _get_element(self, selector):
+        """Get element by index, label, or CSS selector
+        
+        Args:
+            selector: Can be int (index), str (digit/label/CSS)
+        
+        Returns:
+            ElementHandle or None
+        """
+        # Case 1: Direct integer
+        if isinstance(selector, int):
+            if hasattr(self, "element_map") and selector in self.element_map:
+                return self.element_map[selector]["handle"]
+            return None
+        
+        # Case 2: String input
+        if isinstance(selector, str):
+            selector_clean = selector.strip()
+            
+            # Case 2a: String that's a number (like "7")
+            if selector_clean.isdigit():
+                idx = int(selector_clean)
+                if hasattr(self, "element_map") and idx in self.element_map:
+                    return self.element_map[idx]["handle"]
+                return None
+            
+            # Case 2b: Try label match (remove quotes if present)
+            selector_clean = selector_clean.strip('"').strip("'")
+            if hasattr(self, "element_map"):
+                for meta in self.element_map.values():
+                    if meta["label"].lower() == selector_clean.lower():
+                        return meta["handle"]
+            
+            # Case 2c: Try as CSS selector
+            try:
+                return self.page.query_selector(selector_clean)
+            except:
+                return None
+        
+        return None
     def go_to(self, url: str):
         """Navigate to URL"""
         try:
             if not url.startswith(("http://", "https://")):
                 url = "http://" + url
 
-            self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            self.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
 
             self.log_action("navigate", f"URL: {url}, Title: {self.page.title()}", success=True)
             console.print(f"[bold green][INFO][/bold green] Navigated to {url}")
@@ -171,7 +211,7 @@ class BaseBrowserAgent:
     def refresh(self):
         """Reload the current page."""
         try:
-            self.page.reload(wait_until="domcontentloaded", timeout=30000)
+            self.page.reload(wait_until="domcontentloaded", timeout=self.timeout)
             self.log_action("refresh", f"URL: {self.page.url}", success=True)
             console.print(f"[bold green][INFO][/bold green] Page refreshed: {self.page.url}")
         except Exception as e:
@@ -181,7 +221,7 @@ class BaseBrowserAgent:
     def back(self):
         """Navigate to the previous page in browser history."""
         try:
-            response = self.page.go_back(wait_until="domcontentloaded", timeout=30000)
+            response = self.page.go_back(wait_until="domcontentloaded", timeout=self.timeout)
             if response is not None:
                 self.log_action("back", f"URL: {self.page.url}", success=True)
                 console.print(f"[bold green][INFO][/bold green] Navigated back to: {self.page.url}")
@@ -195,7 +235,7 @@ class BaseBrowserAgent:
     def forward(self):
         """Navigate to the next page in browser history."""
         try:
-            response = self.page.go_forward(wait_until="domcontentloaded", timeout=30000)
+            response = self.page.go_forward(wait_until="domcontentloaded", timeout=self.timeout)
             if response is not None:
                 self.log_action("forward", f"URL: {self.page.url}", success=True)
                 console.print(f"[bold green][INFO][/bold green] Navigated forward to: {self.page.url}")
@@ -220,7 +260,7 @@ class BaseBrowserAgent:
         """Navigate to the homepage (default to https://www.google.com)."""
         homepage = "https://www.google.com"
         try:
-            self.page.goto(homepage, wait_until="domcontentloaded", timeout=30000)
+            self.page.goto(homepage, wait_until="domcontentloaded", timeout=self.timeout)
             self.log_action("home", f"URL: {homepage}", success=True)
             console.print(f"[bold green][INFO][/bold green] Navigated to homepage: {homepage}")
         except Exception as e:
@@ -249,59 +289,6 @@ class BaseBrowserAgent:
         except Exception as e:
             self.log_action("title", "Failed to get page title", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to get page title: {str(e)}")
-            return None
-
-    def previous_url(self): 
-        """Get the previous URL from actual navigation history."""
-        try:
-            # Track all successful navigation actions, not just 'go' commands
-            navigation_history = []
-            
-            for entry in self.command_history:
-                if entry['success']:
-                    # Include all navigation commands that change URL
-                    if entry['command'] in ['go_to', 'go'] and entry['args']:
-                        url = entry['args'][0]
-                        if not url.startswith(("http://", "https://")):
-                            url = "http://" + url
-                        navigation_history.append({
-                            'url': url,
-                            'timestamp': entry['timestamp'],
-                            'type': 'navigate'
-                        })
-                    # Also track successful back/forward navigation
-                    elif entry['command'] in ['back', 'forward']:
-                        # For back/forward, we need to get the current URL after the action
-                        # This is more complex since we need to track actual browser state
-                        try:
-                            current_url = self.page.url
-                            navigation_history.append({
-                                'url': current_url,
-                                'timestamp': entry['timestamp'], 
-                                'type': entry['command']
-                            })
-                        except:
-                            pass
-            
-            if len(navigation_history) < 2:
-                console.print("[bold yellow][WARN][/bold yellow] No previous URL in navigation history.")
-                self.log_action("previous_url", "No previous URL found", success=False)
-                return None
-                
-            # Get the second-to-last navigation entry
-            prev_entry = navigation_history[-2]
-            prev_url = prev_entry['url']
-            
-            self.log_action("previous_url", f"Previous URL: {prev_url}", success=True)
-            console.print(f"[bold cyan][INFO][/bold cyan] Previous URL: {prev_url}")
-            console.print(f"[bold cyan][INFO][/bold cyan] Navigation type: {prev_entry['type']}")
-            console.print(f"[bold cyan][INFO][/bold cyan] Timestamp: {prev_entry['timestamp']}")
-            
-            return prev_url
-            
-        except Exception as e:
-            self.log_action("previous_url", "Failed to get previous URL", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to get previous URL: {str(e)}")
             return None
 
     def history_list(self):
@@ -362,127 +349,96 @@ class BaseBrowserAgent:
     def right_click(self, selector):
         """Right-click an element by selector or element ID"""
         try:
-            # Check if selector is an element ID from scan
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-                element.click(button='right')
-                console.print(f"[bold green][INFO][/bold green] Right-clicked element {selector}")
-            else:
-                # Use regular selector
-                self.page.click(selector, button='right')
-                console.print(f"[bold green][INFO][/bold green] Right-clicked element: {selector}")
+            element = self._get_element(selector)  # Use helper
+            if not element:
+                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
+                return False
             
+            element.click(button='right')
+            console.print(f"[bold green][INFO][/bold green] Right-clicked element {selector}")
             self.log_action("right_click", f"Selector: {selector}", success=True)
+            return True
             
         except Exception as e:
             self.log_action("right_click", f"Selector: {selector}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to right-click {selector}: {str(e)}")
+            return False;
 
-    def type_text(self, selector, text, clear_first=True):
-        """Type text into an input field with human-like timing"""
+    def type(self, selector, text, clear_first=True):
+        """Type text into an input field"""
         try:
-            element = None
-            
-            # Handle numeric selectors for element_map indices
-            if selector.isdigit():
-                index = int(selector)
-                if hasattr(self, 'element_map') and index in self.element_map:
-                    element_info = self.element_map[index]
-                    element = element_info["handle"]
-                else:
-                    console.print(f"[bold red][ERROR][/bold red] Element at index {index} not found in element_map")
-                    return False
-            else:
-                # Try to find by label match in element_map first
-                if hasattr(self, 'element_map'):
-                    for idx, element_info in self.element_map.items():
-                        if element_info["label"].lower() == selector.lower():
-                            element = element_info["handle"]
-                            break
-                
-                # If not found by label, try as CSS selector
-                if not element:
-                    element = self.page.query_selector(selector)
-            
+            element = self._get_element(selector)
             if not element:
-                console.print(f"[bold red][ERROR][/bold red] Input element not found: {selector}")
+                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
                 return False
             
-            # Always clear the field first - multiple methods to ensure it's cleared
+            # Verify it's an input
+            is_input = element.evaluate("""
+                el => {
+                    return el.tagName === 'INPUT' || 
+                        el.tagName === 'TEXTAREA' ||
+                        el.contentEditable === 'true' ||
+                        el.getAttribute('role') === 'textbox';
+                }
+            """)
+            
+            if not is_input:
+                console.print(f"[bold red][ERROR][/bold red] Element is not an input field")
+                return False
+            
+            # Clear and type
             element.click()
-            self.page.wait_for_timeout(100)  # Small delay after click
+            element.fill('')  # Playwright's fill() is reliable
+            element.type(text, delay=50)
             
-            # Method 1: Select all and delete
-            element.press('Control+a')
-            self.page.wait_for_timeout(50)
-            element.press('Delete')
-            self.page.wait_for_timeout(50)
-            
-            # Method 2: Clear using fill with empty string (Playwright specific)
-            element.fill('')
-            self.page.wait_for_timeout(100)
-            
-            # Method 3: Additional clearing for stubborn fields
-            current_value = element.input_value()
-            if current_value:
-                # If there's still content, try more aggressive clearing
-                element.press('Control+a')
-                element.press('Backspace')
-                self.page.wait_for_timeout(50)
-            
-            # Verify field is cleared
-            final_value = element.input_value()
-            if final_value:
-                console.print(f"[bold yellow][WARN][/bold yellow] Field may not be completely cleared, remaining: '{final_value}'")
-            
-            # Type the new text with human-like delays
-            element.type(text, delay=50)  # 50ms between keystrokes
-            
-            console.print(f"[bold green][INFO][/bold green] Cleared and typed text into {selector}: '{text[:50]}{'...' if len(text) > 50 else ''}'")
-            self.log_action("type_text", f"Selector: {selector}, Text length: {len(text)}", success=True)
+            console.print(f"[bold green][INFO][/bold green] Typed into {selector}")
+            self.log_action("type", f"Selector: {selector}, Length: {len(text)}", success=True)
             return True
-            
         except Exception as e:
-            self.log_action("type_text", f"Selector: {selector}", success=False)
-            console.print(f"[bold red][ERROR][/bold red] Failed to type text: {str(e)}")
+            console.print(f"[bold red][ERROR][/bold red] Failed to type: {e}")
+            self.log_action("type", f"Selector: {selector}", success=False)
             return False
 
     def double_click(self, selector):
         """Double-click an element by selector or element ID"""
         try:
-            # Check if selector is an element ID from scan
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-                element.dblclick()
-                console.print(f"[bold green][INFO][/bold green] Double-clicked element {selector}")
-            else:
-                # Use regular selector
-                self.page.dblclick(selector)
-                console.print(f"[bold green][INFO][/bold green] Double-clicked element: {selector}")
+            element = self._get_element(selector)
             
+            if not element:
+                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
+                if isinstance(selector, (int, str)) and str(selector).strip().isdigit():
+                    console.print(f"[bold yellow][TIP][/bold yellow] Run 'scan' first to see available elements")
+                self.log_action("double_click", f"Selector: {selector}", success=False)
+                return False
+            
+            element.dblclick()
+            console.print(f"[bold green][INFO][/bold green] Double-clicked element {selector}")
             self.log_action("double_click", f"Selector: {selector}", success=True)
+            return True
             
         except Exception as e:
             self.log_action("double_click", f"Selector: {selector}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to double-click {selector}: {str(e)}")
+            return False
 
     def middle_click(self, selector):
         """Middle-click an element by selector or element ID"""
         try:
-            # Check if selector is an element ID from scan
-            if hasattr(self, 'element_map') and selector in self.element_map:
-                element = self.element_map[selector]
-                element.click(button='middle')
-                console.print(f"[bold green][INFO][/bold green] Middle-clicked element {selector}")
-            else:
-                # Use regular selector
-                self.page.click(selector, button='middle')
-                console.print(f"[bold green][INFO][/bold green] Middle-clicked element: {selector}")
+            element = self._get_element(selector)
             
+            if not element:
+                console.print(f"[bold red][ERROR][/bold red] Element not found: {selector}")
+                if isinstance(selector, (int, str)) and str(selector).strip().isdigit():
+                    console.print(f"[bold yellow][TIP][/bold yellow] Run 'scan' first to see available elements")
+                self.log_action("middle_click", f"Selector: {selector}", success=False)
+                return False
+            
+            element.click(button='middle')
+            console.print(f"[bold green][INFO][/bold green] Middle-clicked element {selector}")
             self.log_action("middle_click", f"Selector: {selector}", success=True)
+            return True
             
         except Exception as e:
             self.log_action("middle_click", f"Selector: {selector}", success=False)
             console.print(f"[bold red][ERROR][/bold red] Failed to middle-click {selector}: {str(e)}")
-
-
+            return False
