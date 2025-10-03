@@ -1,178 +1,637 @@
 """
-Scanning mixin for browser agent.
-Detects and maps interactive elements on the page.
+Advanced scanning mixin for browser agent.
+Intelligent element detection with scoring, persistent IDs, and smart filtering.
 """
-
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Set, Tuple
+from dataclasses import dataclass, field
+from collections import defaultdict
+import hashlib
 from .base_agent import console, action_logger, error_logger
 
+@dataclass
+class ElementData:
+    """Rich element metadata with scoring."""
+    stable_id: str
+    index: int
+    label: str
+    type: str
+    handle: object
+    tag: str
+    score: float
+    href: Optional[str] = None
+    parent_context: Optional[str] = None
+    is_primary_action: bool = False
+    metadata: Dict = field(default_factory=dict)
 
 class ScanningMixin:
     """
-    Page scanning and element detection.
+    Advanced page scanning with intelligent element detection.
     Requires: self.page, self.element_map, self.log_action()
     """
     
-    # Element type selectors (prioritized)
+    # Comprehensive selectors with priority
     SELECTORS = {
-        'buttons': 'button, input[type="button"], input[type="submit"], [role="button"]:not(a)',
-        'inputs': 'input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="url"], textarea',
-        'selects': 'select, [role="listbox"], [role="combobox"]',
-        'checkboxes': 'input[type="checkbox"], input[type="radio"]',
-        'links': 'a[href]:not([href="#"]):not([href=""]):not([href^="javascript:"])',
-        'other_inputs': 'input[type="file"], input[type="number"], input[type="date"], input[type="tel"], input[type="time"]'
+        'buttons': [
+            'button',
+            'input[type="button"]',
+            'input[type="submit"]',
+            '[role="button"]:not(a)',
+            'a[role="button"]',
+            '.btn',
+            '[class*="button"]'
+        ],
+        'inputs': [
+            'input[type="text"]',
+            'input[type="email"]',
+            'input[type="password"]',
+            'input[type="search"]',
+            'input[type="url"]',
+            'input[type="tel"]',
+            'textarea',
+            '[contenteditable="true"]'
+        ],
+        'selects': [
+            'select',
+            '[role="listbox"]',
+            '[role="combobox"]',
+            '[role="menu"]',
+            '.dropdown',
+            '[class*="select"]'
+        ],
+        'checkboxes': [
+            'input[type="checkbox"]',
+            'input[type="radio"]',
+            '[role="checkbox"]',
+            '[role="radio"]'
+        ],
+        'links': [
+            'a[href]:not([href="#"]):not([href=""]):not([href^="javascript:"])'
+        ],
+        'other_inputs': [
+            'input[type="file"]',
+            'input[type="number"]',
+            'input[type="date"]',
+            'input[type="time"]',
+            'input[type="color"]',
+            'input[type="range"]'
+        ]
     }
     
-    def scan(self, filter_type: Optional[str] = None, max_elements: int = 50) -> bool:
+    # Link importance scoring keywords
+    IMPORTANT_LINK_KEYWORDS = {
+        'navigation': ['home', 'about', 'contact', 'services', 'products', 'menu', 'login', 'signup', 'register'],
+        'actions': ['create', 'new', 'add', 'edit', 'delete', 'save', 'submit', 'continue', 'next', 'start'],
+        'content': ['article', 'post', 'page', 'category', 'section', 'view', 'read', 'more']
+    }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._element_registry = {}  # stable_id -> ElementData
+        self._next_index = 1
+        self._scan_filters = []
+    
+    def scan(
+        self, 
+        filter_type: Optional[str] = None,
+        max_elements: int = 50,
+        min_score: float = 0.0,
+        smart_mode: bool = True,
+        include_dynamic: bool = True
+    ) -> bool:
         """
-        Scan page for interactive elements and build element map.
+        Advanced scan with intelligent filtering and scoring.
         
         Args:
-            filter_type: Optional filter ('buttons', 'inputs', 'links', etc.)
-            max_elements: Maximum elements to display (prevents spam)
+            filter_type: Optional filter ('buttons', 'inputs', 'links', etc.) or 'all'
+            max_elements: Maximum elements per type to display
+            min_score: Minimum score threshold (0.0-1.0)
+            smart_mode: Enable intelligent link filtering
+            include_dynamic: Scan for dynamic/hidden elements
         
         Returns:
             True if scan succeeded
         """
         try:
-            # Filter selectors if requested
-            if filter_type:
-                if filter_type not in self.SELECTORS:
-                    console.print(f"[red]Unknown filter:[/red] {filter_type}")
-                    console.print(f"[dim]Available: {', '.join(self.SELECTORS.keys())}[/dim]")
-                    return False
-                selectors = {filter_type: self.SELECTORS[filter_type]}
+            # Validate filter
+            if filter_type and filter_type != 'all' and filter_type not in self.SELECTORS:
+                console.print(f"[red]Unknown filter:[/red] {filter_type}")
+                console.print(f"[dim]Available: {', '.join(self.SELECTORS.keys())}, all[/dim]")
+                return False
+            
+            # Determine which types to scan
+            if filter_type and filter_type != 'all':
+                scan_types = [filter_type]
             else:
-                selectors = self.SELECTORS
+                scan_types = list(self.SELECTORS.keys())
             
-            # Clear previous map
-            self.element_map = {}
-            all_elements = []
-            seen_handles = set()
+            # Collect elements
+            all_elements: List[ElementData] = []
+            seen_stable_ids: Set[str] = set()
             
-            # Scan each selector type
-            for elem_type, selector in selectors.items():
-                elements = self.page.query_selector_all(selector)
-                
-                for element in elements:
-                    try:
-                        # Skip invisible elements
-                        if not element.is_visible():
-                            continue
-                        
-                        # Prevent duplicates (same element matched by multiple selectors)
-                        handle_id = id(element)
-                        if handle_id in seen_handles:
-                            continue
-                        seen_handles.add(handle_id)
-                        
-                        # Get metadata
-                        tag = element.evaluate("el => el.tagName.toLowerCase()")
-                        label = self._extract_label(element, tag)
-                        
-                        if not label or label == f"Unnamed {tag}":
-                            continue  # Skip elements without useful labels
-                        
-                        display_type = self._classify_type(element, tag, elem_type)
-                        
-                        all_elements.append({
-                            'label': label,
-                            'type': display_type,
-                            'handle': element,
-                            'tag': tag
-                        })
-                        
-                    except Exception as e:
-                        error_logger.debug(f"Skipped element: {e}")
-                        continue
+            for elem_type in scan_types:
+                elements = self._scan_type(
+                    elem_type, 
+                    seen_stable_ids,
+                    smart_mode=smart_mode and elem_type == 'links',
+                    include_dynamic=include_dynamic
+                )
+                all_elements.extend(elements)
             
-            # Sort by type priority, then alphabetically
-            type_order = {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'CHECKBOX': 4, 'LINK': 5, 'OTHER': 6}
-            all_elements.sort(key=lambda x: (type_order.get(x['type'], 99), x['label'].lower()))
+            # Apply score filtering
+            if min_score > 0:
+                all_elements = [e for e in all_elements if e.score >= min_score]
             
-            # Truncate if needed
-            truncated = len(all_elements) > max_elements
-            if truncated:
-                all_elements = all_elements[:max_elements]
+            # Intelligent sorting
+            all_elements = self._smart_sort(all_elements, smart_mode)
             
-            # Build element map
-            for idx, elem in enumerate(all_elements, start=1):
-                self.element_map[idx] = {
-                    'label': elem['label'],
-                    'type': elem['type'],
-                    'handle': elem['handle']
-                }
+            # Apply per-type limits intelligently
+            all_elements = self._apply_smart_limits(all_elements, max_elements, scan_types)
+            
+            # Update element map (ADDITIVE, not replacement)
+            self._update_element_map(all_elements)
             
             # Display results
-            self._display_scan_results(all_elements, truncated, filter_type)
+            self._display_advanced_results(
+                all_elements, 
+                filter_type,
+                min_score,
+                smart_mode
+            )
             
-            self.log_action("scan", f"{len(all_elements)} elements", success=True)
+            self.log_action("scan", f"{len(all_elements)} elements (smart={smart_mode})", success=True)
             return True
             
         except Exception as e:
             console.print(f"[red]Scan failed:[/red] {e}")
+            import traceback
+            error_logger.debug(traceback.format_exc())
             self.log_action("scan", str(e), success=False)
             return False
     
-    def _extract_label(self, element, tag: str) -> str:
-        """
-        Extract meaningful label for element.
-        Priority: aria-label > placeholder > text > title > value > name > id > generic
-        """
+    def _scan_type(
+        self, 
+        elem_type: str, 
+        seen_ids: Set[str],
+        smart_mode: bool = False,
+        include_dynamic: bool = True
+    ) -> List[ElementData]:
+        """Scan for specific element type with advanced detection."""
+        elements: List[ElementData] = []
+        selectors = self.SELECTORS[elem_type]
+        
+        # Build combined selector
+        combined_selector = ', '.join(selectors)
+        
         try:
-            # Try label sources in priority order
-            label_getters = [
-                lambda: element.get_attribute("aria-label"),
-                lambda: element.get_attribute("placeholder"),
-                lambda: element.inner_text().strip()[:60] if element.inner_text() else None,
-                lambda: element.get_attribute("title"),
-                lambda: element.get_attribute("value"),
-                lambda: element.get_attribute("name"),
-                lambda: element.get_attribute("id"),
-            ]
+            found_elements = self.page.query_selector_all(combined_selector)
             
-            for getter in label_getters:
+            # Also scan for dynamic elements if requested
+            if include_dynamic:
+                dynamic_elements = self._find_dynamic_elements(elem_type)
+                found_elements.extend(dynamic_elements)
+            
+            for element in found_elements:
                 try:
-                    label = getter()
-                    if label and len(label.strip()) > 0:
-                        # Clean whitespace
-                        label = ' '.join(label.split())
-                        
-                        # Truncate long labels
-                        if len(label) > 60:
-                            label = label[:57] + "..."
-                        
-                        return label
-                except:
+                    # Check visibility
+                    is_visible = element.is_visible()
+                    
+                    # For some elements, check if they're in viewport or scrollable
+                    if not is_visible:
+                        is_visible = self._is_potentially_visible(element)
+                    
+                    if not is_visible:
+                        continue
+                    
+                    # Generate stable ID
+                    stable_id = self._generate_stable_id(element)
+                    if stable_id in seen_ids:
+                        continue
+                    seen_ids.add(stable_id)
+                    
+                    # Extract metadata
+                    tag = element.evaluate("el => el.tagName.toLowerCase()")
+                    label = self._extract_advanced_label(element, tag)
+                    
+                    if not label or label.startswith("Unnamed"):
+                        # For links, be more lenient
+                        if elem_type != 'links':
+                            continue
+                    
+                    display_type = self._classify_type(element, tag, elem_type)
+                    
+                    # Calculate relevance score
+                    score = self._calculate_score(element, tag, label, display_type, smart_mode)
+                    
+                    # Extract additional metadata
+                    href = None
+                    parent_context = None
+                    is_primary = False
+                    
+                    if tag == 'a':
+                        href = element.get_attribute('href')
+                        parent_context = self._get_parent_context(element)
+                    
+                    # Detect primary actions
+                    is_primary = self._is_primary_action(element, label, display_type)
+                    
+                    # Get or assign persistent index
+                    if stable_id in self._element_registry:
+                        index = self._element_registry[stable_id].index
+                    else:
+                        index = self._next_index
+                        self._next_index += 1
+                    
+                    elem_data = ElementData(
+                        stable_id=stable_id,
+                        index=index,
+                        label=label,
+                        type=display_type,
+                        handle=element,
+                        tag=tag,
+                        score=score,
+                        href=href,
+                        parent_context=parent_context,
+                        is_primary_action=is_primary
+                    )
+                    
+                    elements.append(elem_data)
+                    self._element_registry[stable_id] = elem_data
+                    
+                except Exception as e:
+                    error_logger.debug(f"Skipped element in {elem_type}: {e}")
                     continue
+        
+        except Exception as e:
+            error_logger.warning(f"Failed to scan {elem_type}: {e}")
+        
+        return elements
+    
+    def _find_dynamic_elements(self, elem_type: str) -> List:
+        """Find hidden/dynamic elements that might appear on interaction."""
+        dynamic_elements = []
+        
+        try:
+            # Look for dropdown menus, hidden panels, etc.
+            if elem_type in ['buttons', 'links']:
+                # Find elements in hidden containers that might expand
+                hidden_containers = self.page.query_selector_all(
+                    '[style*="display: none"], [style*="visibility: hidden"], '
+                    '[hidden], [aria-hidden="true"], .dropdown-menu, [role="menu"]'
+                )
+                
+                for container in hidden_containers[:20]:  # Limit search
+                    try:
+                        # Check if container has show/expand mechanism
+                        parent = container.evaluate(
+                            "el => el.parentElement"
+                        )
+                        if parent:
+                            # Find clickable elements within
+                            inner_elements = container.query_selector_all(
+                                'a[href], button, [role="button"], [role="menuitem"]'
+                            )
+                            dynamic_elements.extend(inner_elements)
+                    except:
+                        continue
+        
+        except Exception as e:
+            error_logger.debug(f"Dynamic scan failed: {e}")
+        
+        return dynamic_elements
+    
+    def _is_potentially_visible(self, element) -> bool:
+        """Check if element might become visible (in dropdown, scrollable area, etc.)."""
+        try:
+            result = element.evaluate("""
+                el => {
+                    // Check if in viewport or nearby
+                    const rect = el.getBoundingClientRect();
+                    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+                    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+                    
+                    // Check if element has size
+                    if (rect.width === 0 || rect.height === 0) return false;
+                    
+                    // Check if within reasonable scroll distance (3x viewport)
+                    if (rect.top < windowHeight * 3 && rect.bottom > -windowHeight * 3) {
+                        return true;
+                    }
+                    
+                    // Check if parent might be expandable
+                    let parent = el.parentElement;
+                    while (parent) {
+                        const style = window.getComputedStyle(parent);
+                        if (style.display === 'none' || style.visibility === 'hidden') {
+                            // Check if parent has show/expand classes or attributes
+                            if (parent.classList.contains('dropdown') || 
+                                parent.classList.contains('menu') ||
+                                parent.hasAttribute('role') && parent.getAttribute('role').includes('menu')) {
+                                return true;
+                            }
+                        }
+                        parent = parent.parentElement;
+                        if (parent === document.body) break;
+                    }
+                    
+                    return false;
+                }
+            """)
+            return result
+        except:
+            return False
+    
+    def _generate_stable_id(self, element) -> str:
+        """Generate stable identifier for element across scans."""
+        try:
+            # Use combination of attributes that should remain stable
+            identifier_data = element.evaluate("""
+                el => {
+                    const getPath = (el) => {
+                        let path = [];
+                        while (el && el.nodeType === Node.ELEMENT_NODE) {
+                            let selector = el.nodeName.toLowerCase();
+                            if (el.id) {
+                                selector += '#' + el.id;
+                                path.unshift(selector);
+                                break;
+                            } else {
+                                let sibling = el;
+                                let nth = 1;
+                                while (sibling.previousElementSibling) {
+                                    sibling = sibling.previousElementSibling;
+                                    if (sibling.nodeName.toLowerCase() === selector) nth++;
+                                }
+                                if (nth > 1) selector += ':nth-of-type(' + nth + ')';
+                                path.unshift(selector);
+                            }
+                            el = el.parentElement;
+                            if (path.length > 5) break; // Limit depth
+                        }
+                        return path.join(' > ');
+                    };
+                    
+                    return {
+                        path: getPath(el),
+                        text: el.innerText?.slice(0, 50) || '',
+                        attrs: {
+                            id: el.id || '',
+                            name: el.getAttribute('name') || '',
+                            class: el.className || '',
+                            href: el.getAttribute('href') || '',
+                            type: el.getAttribute('type') || ''
+                        }
+                    };
+                }
+            """)
             
-            # Special case: links with href but no text
+            # Create hash from stable attributes
+            hash_input = f"{identifier_data['path']}|{identifier_data['text']}|"
+            hash_input += f"{identifier_data['attrs']['id']}|{identifier_data['attrs']['name']}"
+            
+            return hashlib.md5(hash_input.encode()).hexdigest()[:12]
+            
+        except Exception:
+            # Fallback to simple hash
+            return hashlib.md5(str(id(element)).encode()).hexdigest()[:12]
+    
+    def _extract_advanced_label(self, element, tag: str) -> str:
+        """Extract meaningful label with advanced heuristics."""
+        try:
+            label_data = element.evaluate("""
+                el => {
+                    // Priority order for labels
+                    const sources = {
+                        ariaLabel: el.getAttribute('aria-label'),
+                        ariaLabelledBy: (() => {
+                            const id = el.getAttribute('aria-labelledby');
+                            if (id) {
+                                const labelEl = document.getElementById(id);
+                                return labelEl ? labelEl.innerText : null;
+                            }
+                            return null;
+                        })(),
+                        placeholder: el.getAttribute('placeholder'),
+                        title: el.getAttribute('title'),
+                        value: el.getAttribute('value'),
+                        text: el.innerText?.trim(),
+                        alt: el.getAttribute('alt'),
+                        name: el.getAttribute('name'),
+                        id: el.getAttribute('id'),
+                        // For links, try getting context
+                        linkContext: (() => {
+                            if (el.tagName.toLowerCase() === 'a') {
+                                // Check parent for context
+                                let parent = el.parentElement;
+                                if (parent && parent.tagName.toLowerCase() === 'li') {
+                                    return parent.innerText?.trim();
+                                }
+                            }
+                            return null;
+                        })(),
+                        // For inputs, check associated label
+                        labelFor: (() => {
+                            if (el.id) {
+                                const label = document.querySelector(`label[for="${el.id}"]`);
+                                return label ? label.innerText : null;
+                            }
+                            const label = el.closest('label');
+                            return label ? label.innerText : null;
+                        })()
+                    };
+                    
+                    return sources;
+                }
+            """)
+            
+            # Try each source in priority order
+            for key in ['ariaLabel', 'ariaLabelledBy', 'labelFor', 'placeholder', 
+                       'text', 'linkContext', 'title', 'alt', 'value', 'name', 'id']:
+                label = label_data.get(key)
+                if label and len(str(label).strip()) > 0:
+                    label = ' '.join(str(label).split())  # Clean whitespace
+                    
+                    # For link text that's just URL, try to extract meaningful part
+                    if key == 'text' and tag == 'a' and ('http' in label or '/' in label):
+                        continue
+                    
+                    # Truncate long labels intelligently
+                    if len(label) > 60:
+                        label = label[:57] + "..."
+                    
+                    return label
+            
+            # Special handling for links with href but no text
             if tag == 'a':
                 href = element.get_attribute("href") or ""
                 if href and not href.startswith(('#', 'javascript:', 'mailto:')):
-                    # Extract last path segment or domain
-                    parts = href.rstrip('/').split('/')
-                    return parts[-1] if parts[-1] else parts[-2] if len(parts) > 1 else href[:60]
+                    # Extract meaningful part from URL
+                    url_label = self._extract_url_label(href)
+                    if url_label:
+                        return url_label
             
-            # Fallback: try parent label
-            try:
-                parent_label = element.evaluate("""
-                    el => {
-                        const label = el.closest('label') || 
-                                     document.querySelector(`label[for="${el.id}"]`);
-                        return label ? label.innerText.trim() : '';
+            return f"Unnamed {tag}"
+            
+        except Exception as e:
+            error_logger.debug(f"Label extraction failed: {e}")
+            return f"Unnamed {tag}"
+    
+    def _extract_url_label(self, href: str) -> Optional[str]:
+        """Extract meaningful label from URL."""
+        try:
+            # Remove query params and fragments
+            clean_url = href.split('?')[0].split('#')[0]
+            
+            # Get path parts
+            parts = [p for p in clean_url.rstrip('/').split('/') if p]
+            
+            if not parts:
+                return None
+            
+            # Get last meaningful part
+            last_part = parts[-1]
+            
+            # Clean up common patterns
+            last_part = last_part.replace('_', ' ').replace('-', ' ')
+            
+            # Capitalize
+            last_part = ' '.join(word.capitalize() for word in last_part.split())
+            
+            if len(last_part) > 3:  # Minimum meaningful length
+                return last_part[:60]
+            
+            return None
+            
+        except:
+            return None
+    
+    def _get_parent_context(self, element) -> Optional[str]:
+        """Get contextual information from parent elements."""
+        try:
+            context = element.evaluate("""
+                el => {
+                    let parent = el.parentElement;
+                    let depth = 0;
+                    while (parent && depth < 3) {
+                        const tag = parent.tagName.toLowerCase();
+                        if (tag === 'nav') return 'navigation';
+                        if (tag === 'header') return 'header';
+                        if (tag === 'footer') return 'footer';
+                        if (tag === 'aside') return 'sidebar';
+                        if (tag === 'article') return 'article';
+                        
+                        const role = parent.getAttribute('role');
+                        if (role) return role;
+                        
+                        parent = parent.parentElement;
+                        depth++;
                     }
+                    return null;
+                }
+            """)
+            return context
+        except:
+            return None
+    
+    def _calculate_score(
+        self, 
+        element, 
+        tag: str, 
+        label: str, 
+        display_type: str,
+        smart_mode: bool
+    ) -> float:
+        """Calculate relevance score for element (0.0 - 1.0)."""
+        score = 0.5  # Base score
+        
+        try:
+            # Type-based scoring
+            type_scores = {
+                'BUTTON': 0.8,
+                'INPUT': 0.8,
+                'SELECT': 0.7,
+                'CHECKBOX': 0.6,
+                'LINK': 0.4,  # Links start lower, boosted by content
+                'OTHER': 0.3
+            }
+            score = type_scores.get(display_type, 0.5)
+            
+            # Primary action boost
+            if self._is_primary_action(element, label, display_type):
+                score += 0.2
+            
+            # Label quality boost
+            if label and not label.startswith("Unnamed"):
+                label_lower = label.lower()
+                
+                # Action words boost
+                if smart_mode:
+                    for category, keywords in self.IMPORTANT_LINK_KEYWORDS.items():
+                        for keyword in keywords:
+                            if keyword in label_lower:
+                                score += 0.15
+                                break
+                
+                # Clear, descriptive labels
+                if len(label) > 5 and len(label) < 30:
+                    score += 0.1
+            
+            # Accessibility boost
+            if element.get_attribute('aria-label'):
+                score += 0.1
+            
+            # Position boost (elements higher on page often more important)
+            try:
+                y_position = element.evaluate("""
+                    el => el.getBoundingClientRect().top
                 """)
-                if parent_label:
-                    return parent_label[:60]
+                if y_position < 1000:  # First ~1000px
+                    score += 0.1
             except:
                 pass
             
-            # Generic fallback
-            return f"Unnamed {tag}"
+            # Penalize navigation spam (same-domain links that are just "/")
+            if tag == 'a' and smart_mode:
+                href = element.get_attribute('href') or ''
+                if href in ['/', '#', ''] or href.startswith('javascript:'):
+                    score -= 0.3
+            
+            # Cap score
+            return max(0.0, min(1.0, score))
             
         except Exception:
-            return f"Unnamed {tag}"
+            return 0.5
+    
+    def _is_primary_action(self, element, label: str, display_type: str) -> bool:
+        """Detect if element is a primary action."""
+        try:
+            if display_type not in ['BUTTON', 'LINK']:
+                return False
+            
+            # Check classes/attributes
+            primary_indicators = element.evaluate("""
+                el => {
+                    const classStr = el.className.toLowerCase();
+                    const id = (el.id || '').toLowerCase();
+                    return classStr.includes('primary') || 
+                           classStr.includes('main') ||
+                           classStr.includes('cta') ||
+                           id.includes('primary');
+                }
+            """)
+            
+            if primary_indicators:
+                return True
+            
+            # Check label for action words
+            label_lower = label.lower()
+            primary_words = ['submit', 'continue', 'next', 'create', 'sign up', 'register', 'buy', 'get started']
+            if any(word in label_lower for word in primary_words):
+                return True
+            
+            return False
+            
+        except:
+            return False
     
     def _classify_type(self, element, tag: str, selector_type: str) -> str:
         """Determine display type for element."""
@@ -197,25 +656,91 @@ class ScanningMixin:
         else:
             return 'OTHER'
     
-    def _display_scan_results(self, elements: List[Dict], truncated: bool, filter_type: Optional[str]):
-        """Display scan results in clean grouped format."""
-        filter_text = f" ({filter_type})" if filter_type else ""
+    def _smart_sort(self, elements: List[ElementData], smart_mode: bool) -> List[ElementData]:
+        """Intelligently sort elements."""
+        if smart_mode:
+            # Sort by: primary actions first, then score, then type, then alphabetical
+            elements.sort(key=lambda x: (
+                -int(x.is_primary_action),  # Primary first (negative for reverse)
+                -x.score,  # High score first
+                {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'CHECKBOX': 4, 'LINK': 5, 'OTHER': 6}.get(x.type, 99),
+                x.label.lower()
+            ))
+        else:
+            # Standard sort
+            type_order = {'BUTTON': 1, 'INPUT': 2, 'SELECT': 3, 'CHECKBOX': 4, 'LINK': 5, 'OTHER': 6}
+            elements.sort(key=lambda x: (type_order.get(x.type, 99), x.label.lower()))
         
-        console.print(f"\n[bold cyan]SCAN RESULTS{filter_text}[/bold cyan]")
-        console.print("─" * 80)
+        return elements
+    
+    def _apply_smart_limits(
+        self, 
+        elements: List[ElementData], 
+        max_per_type: int,
+        scan_types: List[str]
+    ) -> List[ElementData]:
+        """Apply intelligent per-type limits."""
+        if len(scan_types) == 1 and scan_types[0] != 'all':
+            # Single type filter - just apply max
+            return elements[:max_per_type]
+        
+        # Multiple types - apply per-type limits
+        type_counts = defaultdict(int)
+        filtered = []
+        
+        # Higher limits for important types
+        type_limits = {
+            'BUTTON': max_per_type,
+            'INPUT': max_per_type,
+            'SELECT': max_per_type // 2,
+            'CHECKBOX': max_per_type // 2,
+            'LINK': max_per_type * 2,  # Allow more links but they're scored lower
+            'OTHER': max_per_type // 4
+        }
+        
+        for elem in elements:
+            limit = type_limits.get(elem.type, max_per_type)
+            if type_counts[elem.type] < limit:
+                filtered.append(elem)
+                type_counts[elem.type] += 1
+        
+        return filtered
+    
+    def _update_element_map(self, elements: List[ElementData]):
+        """Update element map ADDITIVELY (not replacement)."""
+        for elem in elements:
+            self.element_map[elem.index] = {
+                'label': elem.label,
+                'type': elem.type,
+                'handle': elem.handle,
+                'stable_id': elem.stable_id,
+                'score': elem.score
+            }
+    
+    def _display_advanced_results(
+        self, 
+        elements: List[ElementData],
+        filter_type: Optional[str],
+        min_score: float,
+        smart_mode: bool
+    ):
+        """Display scan results with advanced formatting."""
+        filter_text = f" ({filter_type})" if filter_type else ""
+        mode_text = " [SMART]" if smart_mode else ""
+        score_text = f" [score≥{min_score:.1f}]" if min_score > 0 else ""
+        
+        console.print(f"\n[bold cyan]SCAN RESULTS{filter_text}{mode_text}{score_text}[/bold cyan]")
+        console.print("─" * 90)
         
         if not elements:
             console.print("[yellow]No interactive elements found[/yellow]")
-            console.print("─" * 80)
+            console.print("─" * 90)
             return
         
         # Group by type
-        grouped: Dict[str, List[tuple]] = {}
-        for idx, elem in enumerate(elements, start=1):
-            elem_type = elem['type']
-            if elem_type not in grouped:
-                grouped[elem_type] = []
-            grouped[elem_type].append((idx, elem['label']))
+        grouped: Dict[str, List[ElementData]] = defaultdict(list)
+        for elem in elements:
+            grouped[elem.type].append(elem)
         
         # Display each type group
         type_colors = {
@@ -232,30 +757,55 @@ class ScanningMixin:
                 continue
             
             color = type_colors[elem_type]
-            count = len(grouped[elem_type])
+            type_elements = grouped[elem_type]
+            count = len(type_elements)
             
             console.print(f"\n[bold {color}]{elem_type}S ({count}):[/bold {color}]")
             
-            for idx, label in grouped[elem_type]:
-                console.print(f"  [{idx:>3}] {label}")
+            for elem in type_elements:
+                # Format with score and primary indicator
+                score_str = f"{elem.score:.2f}"
+                primary_marker = " ⭐" if elem.is_primary_action else ""
+                
+                if smart_mode:
+                    console.print(
+                        f"  [{elem.index:>3}] {elem.label} "
+                        f"[dim]({score_str})[/dim]{primary_marker}"
+                    )
+                else:
+                    console.print(f"  [{elem.index:>3}] {elem.label}")
         
-        console.print("\n" + "─" * 80)
-        
-        if truncated:
-            console.print(f"[yellow]Showing first {len(elements)} elements[/yellow]")
-        
-        console.print(f"[dim]Use 'click N' or 'type N \"text\"' where N is the element number[/dim]\n")
+        console.print("\n" + "─" * 90)
+        console.print(f"[bold]Total: {len(elements)} elements[/bold] | Registry size: {len(self._element_registry)}")
+        console.print(f"[dim]Use 'click N' or 'type N \"text\"' where N is the element number[/dim]")
+        console.print(f"[dim]⭐ = Primary action | Numbers persist across scans[/dim]\n")
     
-    def get_element_info(self, selector: int) -> bool:
+    def rescan(self, preserve_map: bool = True) -> bool:
         """
-        Display detailed information about a scanned element.
+        Rescan page with same settings.
         
         Args:
-            selector: Element index from scan
+            preserve_map: Keep existing element indices
         
         Returns:
-            True if info displayed
+            True if rescan succeeded
         """
+        if not preserve_map:
+            self._element_registry.clear()
+            self.element_map.clear()
+            self._next_index = 1
+        
+        return self.scan()
+    
+    def clear_scan(self):
+        """Clear all scan data and reset."""
+        self._element_registry.clear()
+        self.element_map.clear()
+        self._next_index = 1
+        console.print("[yellow]Scan data cleared[/yellow]")
+    
+    def get_element_info(self, selector: int) -> bool:
+        """Display detailed information about a scanned element."""
         try:
             if selector not in self.element_map:
                 console.print(f"[red]No element with index {selector}[/red]")
@@ -265,42 +815,259 @@ class ScanningMixin:
             meta = self.element_map[selector]
             element = meta['handle']
             
-            # Gather attributes
+            # Gather comprehensive attributes
             attrs = element.evaluate("""
                 el => {
                     const attrs = {};
                     for (let attr of el.attributes) {
                         attrs[attr.name] = attr.value;
                     }
+                    
+                    const rect = el.getBoundingClientRect();
+                    
                     return {
                         tag: el.tagName.toLowerCase(),
-                        text: el.innerText?.slice(0, 100),
+                        text: el.innerText?.slice(0, 200),
                         visible: el.offsetParent !== null,
+                        position: {
+                            x: Math.round(rect.left),
+                            y: Math.round(rect.top),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        },
+                        computed: {
+                            display: window.getComputedStyle(el).display,
+                            visibility: window.getComputedStyle(el).visibility,
+                            zIndex: window.getComputedStyle(el).zIndex
+                        },
                         attrs: attrs
                     };
                 }
             """)
             
-            console.print(f"\n[bold cyan]Element [{selector}] Info:[/bold cyan]")
-            console.print(f"  Label:   {meta['label']}")
-            console.print(f"  Type:    {meta['type']}")
-            console.print(f"  Tag:     <{attrs['tag']}>")
-            console.print(f"  Visible: {attrs['visible']}")
+            console.print(f"\n[bold cyan]Element [{selector}] Detailed Info:[/bold cyan]")
+            console.print("─" * 70)
+            console.print(f"  [bold]Label:[/bold]   {meta['label']}")
+            console.print(f"  [bold]Type:[/bold]    {meta['type']}")
+            console.print(f"  [bold]Tag:[/bold]     <{attrs['tag']}>")
+            console.print(f"  [bold]Score:[/bold]   {meta.get('score', 0.0):.2f}")
+            console.print(f"  [bold]ID:[/bold]      {meta.get('stable_id', 'N/A')}")
+            console.print(f"  [bold]Visible:[/bold] {attrs['visible']}")
             
+            # Position info
+            pos = attrs['position']
+            console.print(f"\n  [bold]Position:[/bold]")
+            console.print(f"    Location: ({pos['x']}, {pos['y']})")
+            console.print(f"    Size: {pos['width']}x{pos['height']}px")
+            
+            # Display computed styles
+            comp = attrs['computed']
+            console.print(f"\n  [bold]Computed Styles:[/bold]")
+            console.print(f"    Display: {comp['display']}")
+            console.print(f"    Visibility: {comp['visibility']}")
+            console.print(f"    Z-Index: {comp['zIndex']}")
+            
+            # Text content
             if attrs.get('text'):
-                console.print(f"  Text:    {attrs['text']}")
+                console.print(f"\n  [bold]Text Content:[/bold]")
+                console.print(f"    {attrs['text'][:150]}")
             
+            # Attributes
             if attrs['attrs']:
-                console.print("\n  Attributes:")
-                for key, val in list(attrs['attrs'].items())[:10]:  # Limit output
-                    console.print(f"    {key}={val[:50]}")
+                console.print(f"\n  [bold]Attributes:[/bold]")
+                important_attrs = ['id', 'name', 'class', 'href', 'type', 'value', 
+                                 'placeholder', 'aria-label', 'role']
+                
+                for key in important_attrs:
+                    if key in attrs['attrs']:
+                        val = attrs['attrs'][key]
+                        if val:
+                            display_val = val[:60] + "..." if len(val) > 60 else val
+                            console.print(f"    {key}: {display_val}")
+                
+                # Show remaining attributes
+                other_attrs = {k: v for k, v in attrs['attrs'].items() 
+                             if k not in important_attrs and v}
+                if other_attrs:
+                    console.print(f"\n  [bold]Other Attributes:[/bold]")
+                    for key, val in list(other_attrs.items())[:5]:
+                        display_val = val[:40] + "..." if len(val) > 40 else val
+                        console.print(f"    {key}: {display_val}")
             
-            console.print()
+            console.print("\n" + "─" * 70 + "\n")
             
             self.log_action("element_info", f"[{selector}] {meta['label']}", success=True)
             return True
             
         except Exception as e:
             console.print(f"[red]Failed to get element info:[/red] {e}")
+            import traceback
+            error_logger.debug(traceback.format_exc())
             self.log_action("element_info", str(e), success=False)
             return False
+    
+    def scan_smart(self, element_type: str = 'all', limit: int = 30) -> bool:
+        """
+        Quick smart scan with intelligent defaults.
+        
+        Args:
+            element_type: Type to scan ('all', 'buttons', 'inputs', 'links')
+            limit: Max elements to show
+        
+        Returns:
+            True if succeeded
+        """
+        return self.scan(
+            filter_type=element_type,
+            max_elements=limit,
+            min_score=0.3,  # Filter low-value elements
+            smart_mode=True,
+            include_dynamic=True
+        )
+    
+    def scan_all(self, limit: int = 100) -> bool:
+        """
+        Comprehensive scan with minimal filtering.
+        
+        Args:
+            limit: Max elements per type
+        
+        Returns:
+            True if succeeded
+        """
+        return self.scan(
+            filter_type='all',
+            max_elements=limit,
+            min_score=0.0,
+            smart_mode=False,
+            include_dynamic=True
+        )
+    
+    def find_elements(self, search_term: str, type_filter: Optional[str] = None) -> bool:
+        """
+        Search for elements by label text.
+        
+        Args:
+            search_term: Text to search for in labels
+            type_filter: Optional type filter
+        
+        Returns:
+            True if found any matches
+        """
+        search_lower = search_term.lower()
+        matches = []
+        
+        for idx, meta in self.element_map.items():
+            if type_filter and meta['type'] != type_filter.upper():
+                continue
+            
+            if search_lower in meta['label'].lower():
+                matches.append((idx, meta))
+        
+        if not matches:
+            console.print(f"[yellow]No elements found matching '{search_term}'[/yellow]")
+            if type_filter:
+                console.print(f"[dim]Filter: {type_filter}[/dim]")
+            console.print("[dim]Try running 'scan' first or use different search term[/dim]")
+            return False
+        
+        console.print(f"\n[bold cyan]Found {len(matches)} matching elements:[/bold cyan]")
+        console.print("─" * 70)
+        
+        for idx, meta in matches:
+            score_info = f" ({meta['score']:.2f})" if 'score' in meta else ""
+            console.print(f"  [{idx:>3}] {meta['type']:<10} {meta['label']}{score_info}")
+        
+        console.print("─" * 70 + "\n")
+        
+        self.log_action("find", f"'{search_term}' -> {len(matches)} results", success=True)
+        return True
+    
+    def list_elements(self, element_type: Optional[str] = None) -> bool:
+        """
+        List all currently mapped elements.
+        
+        Args:
+            element_type: Optional filter by type
+        
+        Returns:
+            True if listed successfully
+        """
+        if not self.element_map:
+            console.print("[yellow]No elements in map. Run 'scan' first.[/yellow]")
+            return False
+        
+        elements_to_show = []
+        
+        for idx, meta in sorted(self.element_map.items()):
+            if element_type and meta['type'] != element_type.upper():
+                continue
+            elements_to_show.append((idx, meta))
+        
+        if not elements_to_show:
+            console.print(f"[yellow]No {element_type} elements in map[/yellow]")
+            return False
+        
+        type_text = f" ({element_type})" if element_type else ""
+        console.print(f"\n[bold cyan]Current Element Map{type_text}:[/bold cyan]")
+        console.print("─" * 70)
+        
+        # Group by type
+        grouped = defaultdict(list)
+        for idx, meta in elements_to_show:
+            grouped[meta['type']].append((idx, meta))
+        
+        type_colors = {
+            'BUTTON': 'green',
+            'INPUT': 'yellow',
+            'SELECT': 'magenta',
+            'CHECKBOX': 'cyan',
+            'LINK': 'blue',
+            'OTHER': 'white'
+        }
+        
+        for elem_type in ['BUTTON', 'INPUT', 'SELECT', 'CHECKBOX', 'LINK', 'OTHER']:
+            if elem_type not in grouped:
+                continue
+            
+            color = type_colors[elem_type]
+            console.print(f"\n[bold {color}]{elem_type}S ({len(grouped[elem_type])}):[/bold {color}]")
+            
+            for idx, meta in grouped[elem_type]:
+                console.print(f"  [{idx:>3}] {meta['label']}")
+        
+        console.print("\n" + "─" * 70)
+        console.print(f"[bold]Total: {len(elements_to_show)} elements[/bold]\n")
+        
+        return True
+    
+    def get_stats(self) -> Dict:
+        """Get scanning statistics."""
+        stats = {
+            'total_elements': len(self.element_map),
+            'registry_size': len(self._element_registry),
+            'next_index': self._next_index,
+            'types': defaultdict(int)
+        }
+        
+        for meta in self.element_map.values():
+            stats['types'][meta['type']] += 1
+        
+        return dict(stats)
+    
+    def print_stats(self):
+        """Print scanning statistics."""
+        stats = self.get_stats()
+        
+        console.print("\n[bold cyan]Scanning Statistics:[/bold cyan]")
+        console.print("─" * 50)
+        console.print(f"  Total Mapped Elements: {stats['total_elements']}")
+        console.print(f"  Registry Size: {stats['registry_size']}")
+        console.print(f"  Next Available Index: {stats['next_index']}")
+        
+        if stats['types']:
+            console.print("\n  [bold]Elements by Type:[/bold]")
+            for elem_type, count in sorted(stats['types'].items()):
+                console.print(f"    {elem_type}: {count}")
+        
+        console.print("─" * 50 + "\n")
