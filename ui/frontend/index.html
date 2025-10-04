@@ -3,136 +3,307 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Browser Agent</title>
+    <title>AI Browser Agent - Professional Interface</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="app-container">
-      <!-- Header -->
+      <!-- Modern Header -->
       <header class="header">
         <div class="header-content">
-          <h1>🤖 AI Browser Agent</h1>
-          <div class="status-indicator">
-            <span class="status-dot" id="statusDot"></span>
-            <span class="status-text" id="statusText">Connecting...</span>
+          <div class="logo-section">
+            <svg
+              class="logo-icon"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <path
+                d="M12 2L2 7L12 12L22 7L12 2Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M2 17L12 22L22 17"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M2 12L12 17L22 12"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <div class="logo-text">
+              <h1>AI Browser Agent</h1>
+              <span class="version">v2.0 Professional</span>
+            </div>
+          </div>
+
+          <div class="header-controls">
+            <div class="status-indicator">
+              <span class="status-dot" id="statusDot"></span>
+              <span class="status-text" id="statusText">Connecting...</span>
+            </div>
+
+            <div
+              class="stream-indicator"
+              id="streamIndicator"
+              style="display: none"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+              <span>Live</span>
+            </div>
           </div>
         </div>
       </header>
 
-      <!-- Main Content -->
+      <!-- Main Content Grid -->
       <main class="main-content">
-        <!-- Chat Interface -->
+        <!-- Left Sidebar: Chat -->
         <section class="chat-section">
+          <div class="section-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>Task Console</span>
+          </div>
+
           <div class="chat-container" id="chatContainer">
-            <div class="welcome-message">
-              <h2>👋 Welcome to AI Browser Agent</h2>
+            <div class="welcome-card">
+              <div class="welcome-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M21 16V8C20.9996 7.64927 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64927 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M7.5 4.21L12 6.81L16.5 4.21M12 22.08V12M3.27 6.96L12 12.01L20.73 6.96"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+              <h2>Welcome to AI Browser Agent</h2>
               <p>
-                Enter a task below and watch the agent control the Chromium
-                browser window. The browser will open in a separate window.
+                Autonomous browser automation powered by advanced AI. Watch the
+                live feed as the agent completes your tasks.
               </p>
+
               <div class="example-tasks">
-                <p><strong>Example tasks:</strong></p>
-                <ul>
-                  <li>Go to google.com and search for Python tutorials</li>
-                  <li>Navigate to Wikipedia and find information about AI</li>
-                  <li>Search for spanish inquisition on youtube</li>
-                </ul>
+                <p class="examples-title">Try these examples:</p>
+                <div class="example-chip">
+                  Go to google.com and search for Python tutorials
+                </div>
+                <div class="example-chip">
+                  Navigate to Wikipedia and find information about AI
+                </div>
+                <div class="example-chip">
+                  Search for spanish inquisition on youtube
+                </div>
               </div>
             </div>
           </div>
 
           <div class="input-container">
-            <textarea
-              id="taskInput"
-              placeholder="Enter your task here... (e.g., 'Go to google.com and search for AI')"
-              rows="2"
-            ></textarea>
-            <button id="sendButton" class="send-button" disabled>
-              <span>Send</span>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
-            <button id="stopButton" class="stop-button" style="display: none">
-              <span>Stop</span>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <rect
-                  x="6"
-                  y="6"
-                  width="12"
-                  height="12"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
+            <div class="input-wrapper">
+              <textarea
+                id="taskInput"
+                placeholder="Describe your task... (e.g., 'Go to google.com and search for AI')"
+                rows="1"
+              ></textarea>
+              <button id="sendButton" class="send-button" disabled>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <button id="stopButton" class="stop-button" style="display: none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <rect
+                    x="6"
+                    y="6"
+                    width="12"
+                    height="12"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
 
-        <!-- Split Panels: Commands & Terminal -->
-        <section class="panels-section">
-          <!-- Commands Panel -->
-          <div class="panel commands-panel">
-            <div class="panel-header">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M8 6L2 12L8 18M16 6L22 12L16 18"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                />
-              </svg>
-              <span>Commands</span>
-              <button class="clear-button" id="clearCommands">Clear</button>
-            </div>
-            <div class="panel-content" id="commandsPanel">
-              <div class="empty-state">
-                <p>Commands will appear here as the agent executes</p>
-              </div>
+        <!-- Center: Live Browser Feed -->
+        <section class="browser-section">
+          <div class="section-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect
+                x="3"
+                y="3"
+                width="18"
+                height="18"
+                rx="2"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <path d="M3 9H21M9 21V9" stroke="currentColor" stroke-width="2" />
+            </svg>
+            <span>Live Browser Feed</span>
+            <div class="browser-controls">
+              <div class="quality-badge" id="qualityBadge">HD</div>
+              <div class="latency-badge" id="latencyBadge">~0ms</div>
             </div>
           </div>
 
-          <!-- Terminal Panel -->
-          <div class="panel terminal-panel">
-            <div class="panel-header">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <rect
-                  x="3"
-                  y="4"
-                  width="18"
-                  height="16"
-                  rx="2"
-                  stroke="currentColor"
-                  stroke-width="2"
-                />
-                <path
-                  d="M7 8L10 11L7 14M12 14H17"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <span>Terminal Output</span>
-              <button class="clear-button" id="clearTerminal">Clear</button>
+          <div class="browser-viewport">
+            <video id="browserVideo" autoplay playsinline muted></video>
+            <div class="browser-placeholder" id="browserPlaceholder">
+              <div class="placeholder-content">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none">
+                  <rect
+                    x="3"
+                    y="3"
+                    width="18"
+                    height="18"
+                    rx="2"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                  <path
+                    d="M3 9H21M9 21V9"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                </svg>
+                <h3>Browser Not Connected</h3>
+                <p>Initialize the agent to start live streaming</p>
+              </div>
             </div>
-            <div class="panel-content terminal-content" id="terminalPanel">
-              <div class="terminal-line info">
-                AI Browser Agent Terminal v1.0
+
+            <div
+              class="stream-overlay"
+              id="streamOverlay"
+              style="display: none"
+            >
+              <div class="overlay-content">
+                <div class="spinner"></div>
+                <p>Connecting to browser stream...</p>
               </div>
-              <div class="terminal-line info">Ready to execute tasks...</div>
-              <div class="terminal-line info">
-                Watch the Chromium browser window for live interaction!
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Sidebar: Commands & Terminal -->
+        <section class="info-section">
+          <div class="tabs-container">
+            <div class="tabs-header">
+              <button class="tab-button active" data-tab="commands">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M8 6L2 12L8 18M16 6L22 12L16 18"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                Commands
+              </button>
+              <button class="tab-button" data-tab="terminal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <rect
+                    x="3"
+                    y="4"
+                    width="18"
+                    height="16"
+                    rx="2"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M7 8L10 11L7 14M12 14H17"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                Terminal
+              </button>
+              <button class="clear-button" id="clearActive">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M3 6H21M19 6V20C19 21 18 22 17 22H7C6 22 5 21 5 20V6M8 6V4C8 3 9 2 10 2H14C15 2 16 3 16 4V6"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div class="tabs-content">
+              <div class="tab-pane active" id="commandsTab">
+                <div class="panel-content" id="commandsPanel">
+                  <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M8 6L2 12L8 18M16 6L22 12L16 18"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <p>Commands will appear here as the agent executes</p>
+                  </div>
+                </div>
               </div>
-              <div class="terminal-line">
-                ─────────────────────────────────────
+
+              <div class="tab-pane" id="terminalTab">
+                <div class="panel-content terminal-content" id="terminalPanel">
+                  <div class="terminal-line info">
+                    AI Browser Agent Terminal v2.0
+                  </div>
+                  <div class="terminal-line info">
+                    Ready to execute tasks...
+                  </div>
+                  <div class="terminal-line info">
+                    WebRTC streaming enabled for real-time monitoring
+                  </div>
+                  <div class="terminal-line">
+                    ────────────────────────────────────
+                  </div>
+                </div>
               </div>
             </div>
           </div>
