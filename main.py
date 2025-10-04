@@ -10,11 +10,46 @@ from datetime import datetime
 import sys
 
 
-class BrowserAgent(NavigationMixin, InteractionMixin, ScanningMixin, BaseBrowserAgent):
+class BrowserAgent(BaseBrowserAgent, NavigationMixin, InteractionMixin, ScanningMixin):
     """
     Complete browser agent combining all mixins.
     Inherits from mixins first (left-to-right), then base agent.
     """
+    def _get_element(self, selector):
+        """
+        Resolve element by index, label, or CSS selector.
+        
+        Args:
+            selector: int (element_map index), str (label or CSS)
+        
+        Returns:
+            ElementHandle or None
+        """
+        # Integer index
+        if isinstance(selector, int):
+            return self.element_map.get(selector, {}).get("handle")
+        
+        # String handling
+        if isinstance(selector, str):
+            selector = selector.strip().strip('"').strip("'")
+            
+            # Numeric string -> index lookup
+            if selector.isdigit():
+                idx = int(selector)
+                return self.element_map.get(idx, {}).get("handle")
+            
+            # Label match (case-insensitive)
+            for meta in self.element_map.values():
+                if meta["label"].lower() == selector.lower():
+                    return meta["handle"]
+            
+            # CSS selector fallback
+            try:
+                return self.page.query_selector(selector)
+            except Exception:
+                return None
+        
+        return None
     
     def help(self, command: str = None):
         """
@@ -135,7 +170,6 @@ def run_repl(agent: BrowserAgent):
             console.print(f"[red]Unexpected error:[/red] {e}")
             import traceback
             console.print("[dim]" + traceback.format_exc() + "[/dim]")
-
 
 def main():
     """Main entry point."""
