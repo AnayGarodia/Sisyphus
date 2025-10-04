@@ -22,13 +22,12 @@ class NavigationMixin:
         self._page_load_metrics = {}
         self.default_homepage = "https://www.google.com"
     
-    def go_to(self, url: str, wait_strategy: str = "smart", force_reload: bool = False) -> bool:
+    def go_to(self, url: str, force_reload: bool = False) -> bool:
         """
-        Navigate to URL with intelligent protocol handling and validation.
+        Navigate to URL with simple, reliable loading.
         
         Args:
             url: Target URL (adds https:// if missing)
-            wait_strategy: 'smart', 'load', 'domcontentloaded', 'networkidle', or 'commit'
             force_reload: Force reload if already on this URL
         
         Returns:
@@ -52,40 +51,34 @@ class NavigationMixin:
                 console.print("[dim]Use force_reload=True to reload anyway[/dim]")
                 return True
             
-            # Determine wait strategy
-            if wait_strategy == "smart":
-                wait_until = self._determine_wait_strategy(processed_url)
-            else:
-                wait_until = wait_strategy
-            
-            # Navigate with timeout handling
+            # Navigate - simple commit wait (fastest, most reliable)
             console.print(f"[cyan]Navigating to:[/cyan] {processed_url}")
-            console.print(f"[dim]Wait strategy: {wait_until}[/dim]")
             
             try:
                 response = self.page.goto(
                     processed_url,
-                    wait_until=wait_until,
+                    wait_until="commit",  # Just wait for navigation to commit, don't wait for loads
                     timeout=self.timeout
                 )
                 
-                # Check response status
+                # Check response status if available
                 if response:
                     status = response.status
                     if status >= 400:
                         console.print(f"[yellow]HTTP {status}:[/yellow] Page loaded with error status")
+            
+            except Exception as e:
+                error_msg = str(e)
+                console.print(f"[red]Navigation failed:[/red] {error_msg}")
                 
-            except Exception as nav_error:
-                # Try fallback strategy if smart/networkidle fails
-                if wait_until in ["networkidle", "load"]:
-                    console.print(f"[yellow]Timeout with {wait_until}, trying domcontentloaded...[/yellow]")
-                    response = self.page.goto(
-                        processed_url,
-                        wait_until="domcontentloaded",
-                        timeout=self.timeout
-                    )
-                else:
-                    raise
+                # Provide helpful suggestions
+                if "timeout" in error_msg.lower():
+                    console.print("[dim]Tip: Page might be very slow or unreachable[/dim]")
+                elif "net::" in error_msg.lower() or "DNS" in error_msg:
+                    console.print("[dim]Tip: Check URL spelling and internet connection[/dim]")
+                
+                self.log_action("navigate", f"{url} - {error_msg}", success=False)
+                return False
             
             # Get page info
             title = self._safe_get_title()
@@ -94,7 +87,6 @@ class NavigationMixin:
             # Store metrics
             self._page_load_metrics[processed_url] = {
                 'load_time': load_time,
-                'strategy': wait_until,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -114,14 +106,7 @@ class NavigationMixin:
             
         except Exception as e:
             error_msg = str(e)
-            console.print(f"[red]Navigation failed:[/red] {error_msg}")
-            
-            # Provide helpful suggestions
-            if "timeout" in error_msg.lower():
-                console.print("[dim]Tip: Page might be slow. Try increasing timeout or using wait_strategy='commit'[/dim]")
-            elif "net::" in error_msg.lower() or "DNS" in error_msg:
-                console.print("[dim]Tip: Check URL spelling and internet connection[/dim]")
-            
+            console.print(f"[red]Unexpected error:[/red] {error_msg}")
             self.log_action("navigate", f"{url} - {error_msg}", success=False)
             return False
     

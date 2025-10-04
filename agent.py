@@ -1,477 +1,884 @@
 #!/usr/bin/env python3
 """
-Adaptive LLM browser agent - handles any task through iterative planning.
-Key principle: Plan small, execute, observe, replan.
+Single-step LLM browser agent with intelligent execution and context awareness.
+Executes ONE command at a time with full observability.
 """
 
 import os
 import sys
 import re
-from typing import Dict, List, Optional, Tuple
-from groq import Groq
-from main import BrowserAgent
-from browser import console
-from commands import build_command_registry
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+from enum import Enum
+
+try:
+    from groq import Groq
+except ImportError:
+    raise ImportError("groq package required. Install with: pip install groq")
+
+try:
+    from main import BrowserAgent
+except ImportError:
+    raise ImportError(
+        "Cannot import BrowserAgent. To fix circular dependency:\n"
+        "1. Move BrowserAgent to browser_agent.py, OR\n"
+        "2. Ensure main.py is in sys.path"
+    )
+
+try:
+    from browser import console
+except ImportError:
+    class SimpleConsole:
+        def print(self, *args, **kwargs):
+            print(*args)
+        def input(self, prompt=""):
+            return input(prompt)
+    console = SimpleConsole()
+
+try:
+    from commands import build_command_registry
+except ImportError:
+    raise ImportError("commands module required")
+
+
+class ErrorType(Enum):
+    """Classification of execution errors."""
+    VALIDATION = "validation"
+    OVERLAY = "overlay"
+    TIMEOUT = "timeout"
+    STALE = "stale"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class ExecutionResult:
+    """Result of command execution with full context."""
+    success: bool
+    output: str
+    command: str
+    page_changed: bool = False
+    error_type: Optional[ErrorType] = None
+    page_title: Optional[str] = None
+    page_url: Optional[str] = None
 
 
 class LLMBrowserAgent:
-    """Browser agent with adaptive execution strategy."""
+    """
+    Intelligent browser agent with single-step execution.
     
-    def __init__(self, api_key: Optional[str] = None, headless: bool = False, model: Optional[str] = None):
+    Key features:
+    - One command at a time with full observation
+    - Automatic task completion detection
+    - Rich context awareness
+    - Comprehensive error recovery
+    """
+    
+    MAX_CONVERSATION_MESSAGES = 14
+    DEFAULT_MODEL = "llama-3.1-8b-instant"
+    DEFAULT_MAX_STEPS = 25
+    MAX_CONSECUTIVE_FAILURES = 3
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        headless: bool = False,
+        model: Optional[str] = None,
+        browser_agent: Optional[Any] = None
+    ):
+        """Initialize LLM Browser Agent with configuration."""
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
         if not self.api_key:
-            raise ValueError("Groq API key required. Set GROQ_API_KEY environment variable.")
+            raise ValueError(
+                "Groq API key required. Set GROQ_API_KEY environment variable "
+                "or pass api_key parameter."
+            )
         
-        self.model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        self.model = model or os.getenv("GROQ_MODEL", self.DEFAULT_MODEL)
         self.client = Groq(api_key=self.api_key)
-        self.browser = BrowserAgent(headless=headless)
-        self.commands = build_command_registry(self.browser)
         
-        self.conversation_history: List[Dict] = []
+        self.browser = browser_agent if browser_agent is not None else BrowserAgent(headless=headless)
+        self._owns_browser = browser_agent is None
+        
+        try:
+            self.commands = build_command_registry(self.browser)
+        except Exception as e:
+            if self._owns_browser:
+                self.browser.close()
+            raise RuntimeError(f"Failed to build command registry: {e}")
+        
+        self.conversation_history: List[Dict[str, str]] = []
         self.api_calls_made = 0
         self.consecutive_failures = 0
+        self.step_count = 0
         
         self.system_prompt = self._build_system_prompt()
     
     def _build_system_prompt(self) -> str:
-        return """You are a browser automation assistant. You work iteratively: plan a few actions, execute, observe results, then plan next steps.
+        """Build comprehensive system prompt for intelligent execution."""
+        return """You are an expert browser automation assistant. Execute ONE command at a time, observe results, and make intelligent decisions.
 
-COMMANDS:
-- go <url>         - Navigate
-- scan <filter>    - Scan (inputs, buttons, links)
-- click <N>        - Click element N
-- type <N> "text"  - Type into element N
-- press <key>      - Press key (Enter, Tab, Escape)
-- wait_load        - Wait for page
+═══════════════════════════════════════════════════════════════
+AVAILABLE COMMANDS - YOU HAVE ACCESS TO ALL OF THESE
+═══════════════════════════════════════════════════════════════
 
-RESPONSE FORMAT:
+NAVIGATION:
+  go <url>           Navigate to URL (simple, fast)
+  refresh            Refresh current page
+  back               Go back in browser history
+  forward            Go forward in browser history
+  home               Go to home page
+  url                Get current URL
+  title              Get page title
+  history            Show navigation history
+  nav_history        Detailed navigation history
+  wait_load          Wait for page to finish loading
 
-Action Plan:
-1. command arg
-2. command arg
-COMPLEXITY: <1-10>
-REASONING: <why these actions>
+INTERACTION:
+  click <N>          Click element N
+  double_click <N>   Double-click element N
+  right_click <N>    Right-click element N
+  type <N> "text"    Type text into element N (must be input/textarea)
+  press <key>        Press keyboard key (Enter, Tab, Escape, etc)
+  hover <N>          Hover over element N
+  select <N> "val"   Select option from dropdown N
+  check <N>          Check checkbox N
+  uncheck <N>        Uncheck checkbox N
+  scroll_to <N>      Scroll element N into view
 
-OR
+SCANNING:
+  scan <filter>      Scan page for elements
+                     Filters: inputs, buttons, links 
+  info <N>           Get detailed info about element N
 
+SYSTEM:
+  stats              Show browser statistics
+  help               Show help message
+
+═══════════════════════════════════════════════════════════════
+RESPONSE FORMAT
+═══════════════════════════════════════════════════════════════
+
+You MUST respond with EXACTLY ONE of:
+
+Option 1 - Execute a command:
+COMMAND: <single command>
+REASONING: <why this command>
+
+Option 2 - Task complete:
 DONE
-REASONING: <why complete>
+REASONING: <what you accomplished>
 
-CRITICAL RULES:
+═══════════════════════════════════════════════════════════════
+CRITICAL RULES
+═══════════════════════════════════════════════════════════════
 
-1. PLAN SMALL (2-4 actions max per round)
-   - Don't plan beyond what you can currently see
-   - After navigation/clicks, page changes - you'll replan
-   - Multi-step forms reveal fields progressively
+1. SINGLE-STEP EXECUTION
+   • Execute ONE command per response
+   • Never plan multiple steps ahead
+   • Observe result before deciding next action
+   • Trust the feedback you receive
+
+2. CONTEXT AWARENESS
+   • You receive CURRENT PAGE TITLE and CURRENT PAGE URL after every command
+   • You see FULL TERMINAL OUTPUT from commands
+   • Use this information to make decisions
+   • Compare current state to task goal
+
+3. ELEMENT MANAGEMENT
+   • Element numbers change after EVERY scan
+   • 'scan inputs' gives you [1,2,3...] that are ALL inputs
+   • 'scan buttons' gives you NEW [1,2,3...] that are ALL buttons
+   • Use element numbers from the MOST RECENT scan only
+   • After page changes, you MUST scan again
+
+4. TASK COMPLETION - KNOW WHEN TO STOP
    
-2. ELEMENT PERSISTENCE
-   - 'scan inputs' → elements [1,2,3...] are inputs
-   - 'scan buttons' → elements [1,2,3...] are buttons (previous gone)
-   - Use elements immediately after scanning
-   - After page changes, previous elements invalid
+   Check after EVERY step: Is the task complete?
    
-3. OBSERVE & ADAPT
-   - After each round, you get feedback about what happened
-   - If page changed, rescan to see new elements
-   - If action failed, try different approach
-   - If stuck 3+ rounds, change strategy
+   Navigation tasks → DONE immediately after arriving:
+   • "Go to X" → Navigate and DONE
+   • "Open X website" → Load page and DONE
    
-4. COMPLETION
-   - "Search X" → DONE when on results page
-   - "Click X" → DONE after clicking
-   - "Go to X" → DONE when page loads
-   - "Find X" → DONE when element found
-   - "Create account/Fill form" → DONE when submitted OR when asked for info you don't have
+   Action tasks → DONE after action completes:
+   • "Search for X" → Type query + press Enter, then DONE
+   • "Click X" → Click successfully, then DONE
+   
+   Page entry tasks → DONE when on the correct page:
+   • "Enter X's page" → Navigate to that page, then DONE
+   • "Go to profile of X" → Load their profile, then DONE
+   
+   IMPORTANT: After pressing Enter on a search, wait to see if page changed.
+   If the PAGE TITLE indicates you're on the target page, say DONE.
+   Don't keep clicking links if you're already where you need to be.
 
-COMPLEXITY:
-1-3: Clear next steps (navigate, simple interaction)
-4-6: Moderate (trying different approach, handling errors)
-7-10: Very unclear (stuck, need to explore)
+5. ERROR RECOVERY
+   • "Element N not found" → Scan again for fresh numbers
+   • "Can't type into X" → Wrong element type, scan inputs
+   • "Element stale" → Page changed, scan again
+   • "Element intercepted" → Try 'press Escape' first
 
-EXAMPLES:
+═══════════════════════════════════════════════════════════════
+EXAMPLE EXECUTIONS
+═══════════════════════════════════════════════════════════════
 
-Task: "Create Google account"
-Round 1: See signup page with First/Last name fields
-1. scan inputs
-2. type 1 "TestUser"
-3. type 2 "Smith"
-COMPLEXITY: 2
-REASONING: Fill visible fields, will see what comes next
+Task: "Go to google.com"
+Step 1:
+  COMMAND: go https://google.com
+  REASONING: Navigate to Google
+  
+  [Result shows: CURRENT PAGE TITLE: Google]
+  
+Step 2:
+  DONE
+  REASONING: Task was to go to google.com. We've navigated successfully and are on Google's homepage. Task complete.
 
-Round 2: After filling, see "Next" button
-1. scan buttons
-2. click 1
-3. wait_load
-COMPLEXITY: 2
-REASONING: Submit current step, wait for next page
+---
 
-Round 3: New page appeared, need to see what's there
-1. scan inputs
-COMPLEXITY: 1
-REASONING: Page changed, must scan to see new fields
+Task: "Search for Python on Wikipedia"
+Step 1:
+  COMMAND: go https://wikipedia.org
+  REASONING: Navigate to Wikipedia first
+  
+  [Result shows: CURRENT PAGE TITLE: Wikipedia]
+  
+Step 2:
+  COMMAND: scan inputs
+  REASONING: Find the search box
+  
+  [Result shows: Element [5] "Search Wikipedia"]
+  
+Step 3:
+  COMMAND: type 5 "Python"
+  REASONING: Type search query into search box
+  
+  [Result: Typed successfully]
+  
+Step 4:
+  COMMAND: press Enter
+  REASONING: Submit the search
+  
+  [Result shows: CURRENT PAGE TITLE: Python (programming language) - Wikipedia]
+  
+Step 5:
+  DONE
+  REASONING: Task was to search for Python on Wikipedia. The PAGE TITLE shows we're now on the Python Wikipedia page. Search is complete.
 
-Task: "Search Python and click first result"
-Round 1:
-1. go https://google.com
-2. wait_load
-3. scan inputs
-4. type 1 "Python"
-COMPLEXITY: 2
-REASONING: Navigate and start search
+---
 
-Round 2: After typing
-1. press Enter
-2. wait_load
-COMPLEXITY: 1
-REASONING: Execute search
+Task: "Go to wiki and enter Kishore Kumar's page"
+Step 1:
+  COMMAND: go https://wikipedia.org
+  REASONING: Navigate to Wikipedia
+  
+Step 2:
+  COMMAND: scan inputs
+  REASONING: Find search box to look up Kishore Kumar
+  
+Step 3:
+  COMMAND: type 5 "Kishore Kumar"
+  REASONING: Type name into search box
+  
+Step 4:
+  COMMAND: press Enter
+  REASONING: Submit search to find his page
+  
+  [Result shows: CURRENT PAGE TITLE: Kishore Kumar - Wikipedia]
+  
+Step 5:
+  DONE
+  REASONING: Task was to enter Kishore Kumar's page. The CURRENT PAGE TITLE shows "Kishore Kumar - Wikipedia" which means we've successfully entered his page. Task complete.
 
-Round 3: On results page
-1. scan links
-2. click 3
-COMPLEXITY: 2
-REASONING: Find and click first actual result
+═══════════════════════════════════════════════════════════════
+KEY REMINDERS
+═══════════════════════════════════════════════════════════════
 
-Round 4: After clicking, navigated to result page
-DONE
-REASONING: Clicked result link, task complete
-
-KEY INSIGHT: You don't need to see the whole form/workflow upfront. Just handle what's currently visible, then adapt when page changes."""
+• Check CURRENT PAGE TITLE after every command
+• If it matches your goal, say DONE immediately
+• Don't over-explore after completing the task
+• Trust the context information you receive
+• One command at a time, always"""
     
-    def _parse_action_plan(self, response: str) -> Dict:
-        """Parse LLM response."""
-        lines = [l.strip() for l in response.strip().split('\n') if l.strip()]
+    def _get_page_context(self) -> Tuple[Optional[str], Optional[str]]:
+        """Get current page title and URL safely."""
+        try:
+            title = self.browser.page.title or "No title"
+            url = self.browser.page.url
+            return title, url
+        except Exception:
+            return None, None
+    
+    def _parse_response(self, response: str) -> Dict[str, Any]:
+        """Parse LLM response into structured command or done signal."""
+        lines = [line.strip() for line in response.strip().split('\n') if line.strip()]
         
-        if lines and lines[0].upper() == 'DONE':
+        if not lines:
+            return {'error': 'Empty response'}
+        
+        # Check for DONE
+        if lines[0].upper() == 'DONE':
             reasoning = ''
             for line in lines[1:]:
-                if line.startswith('REASONING:'):
-                    reasoning = line.split('REASONING:', 1)[1].strip()
+                if line.upper().startswith('REASONING:'):
+                    reasoning = line.split(':', 1)[1].strip()
                     break
-            return {'done': True, 'reasoning': reasoning, 'actions': [], 'complexity': 0}
+            return {'done': True, 'reasoning': reasoning}
         
-        actions = []
-        complexity = 5
+        # Parse COMMAND
+        command = ''
         reasoning = ''
         
         for line in lines:
-            match = re.match(r'^\d+\.\s+(.+)$', line)
-            if match:
-                actions.append(match.group(1).strip())
-            elif line.startswith('COMPLEXITY:'):
-                try:
-                    complexity = max(1, min(10, int(re.search(r'\d+', line).group())))
-                except:
-                    complexity = 5
-            elif line.startswith('REASONING:'):
-                reasoning = line.split('REASONING:', 1)[1].strip()
+            if line.upper().startswith('COMMAND:'):
+                command = line.split(':', 1)[1].strip()
+            elif line.upper().startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
         
-        # Limit to max 5 actions per round (safety)
-        if len(actions) > 5:
-            actions = actions[:5]
+        if not command:
+            return {'error': 'No command found in response'}
         
-        return {'done': False, 'reasoning': reasoning, 'actions': actions, 'complexity': complexity}
+        return {'done': False, 'command': command, 'reasoning': reasoning}
     
-    def _validate_action(self, command_str: str) -> Tuple[bool, str]:
-        """Validate action before execution."""
-        parts = self.browser._parse_command_line(command_str)
+    def _validate_command(self, command_str: str) -> Tuple[bool, str]:
+        """Validate command syntax and prerequisites."""
+        try:
+            parts = self.browser._parse_command_line(command_str)
+        except Exception as e:
+            return False, f"Failed to parse: {str(e)}"
+        
         if not parts:
             return False, "Empty command"
         
         cmd = parts[0].lower()
         args = parts[1:]
         
-        if cmd in ['type', 'click', 'hover', 'scroll_to'] and args:
+        if cmd not in self.commands:
+            available = ', '.join(sorted(self.commands.keys()))
+            return False, f"Unknown command '{cmd}'. Available: {available}"
+        
+        # Validate element-based commands
+        element_commands = ['type', 'click', 'hover', 'scroll_to', 'double_click', 
+                           'right_click', 'select', 'check', 'uncheck', 'info']
+        
+        if cmd in element_commands:
+            if not args:
+                return False, f"'{cmd}' requires element number"
+            
             try:
                 element_idx = int(args[0])
-                
-                if element_idx not in self.browser.element_map:
-                    available = list(self.browser.element_map.keys())
-                    return False, f"Element {element_idx} doesn't exist. Available: {available if available else 'none - scan first'}"
-                
-                if cmd == 'type':
-                    elem_type = self.browser.element_map[element_idx]['type'].lower()
-                    if elem_type not in ['input', 'textarea']:
-                        return False, f"Element {element_idx} is '{elem_type}', can't type into it"
             except (ValueError, IndexError):
-                pass
+                return False, f"First argument must be element number (integer)"
+            
+            if element_idx not in self.browser.element_map:
+                available = sorted(self.browser.element_map.keys())
+                if available:
+                    return False, f"Element {element_idx} not found. Available: {available[:15]}"
+                else:
+                    return False, f"No elements scanned. Use 'scan inputs' or 'scan buttons' first"
+            
+            # Special validation for type command
+            if cmd == 'type':
+                elem_meta = self.browser.element_map[element_idx]
+                elem_type = elem_meta.get('type', '').lower()
+                
+                if elem_type not in ['input', 'textarea']:
+                    return False, f"Cannot type into {elem_type}. Use 'scan inputs' to find text fields"
+                
+                if len(args) < 2:
+                    return False, f"'type' requires text: type {element_idx} \"your text\""
+        
+        if cmd == 'go' and not args:
+            return False, "'go' requires URL"
         
         return True, ""
     
-    def _execute_command(self, command_str: str) -> Dict:
-        """Execute command and return detailed result."""
-        is_valid, error_msg = self._validate_action(command_str)
+    def _execute_command(self, command_str: str) -> ExecutionResult:
+        """Execute single command with comprehensive result tracking."""
+        # Validate first
+        is_valid, error_msg = self._validate_command(command_str)
         if not is_valid:
-            return {
-                "success": False,
-                "output": error_msg,
-                "command": command_str,
-                "error_type": "validation",
-                "page_changed": False
-            }
+            title, url = self._get_page_context()
+            return ExecutionResult(
+                success=False,
+                output=error_msg,
+                command=command_str,
+                page_changed=False,
+                error_type=ErrorType.VALIDATION,
+                page_title=title,
+                page_url=url
+            )
         
-        parts = self.browser._parse_command_line(command_str)
-        if not parts:
-            return {"success": False, "output": "Empty command", "command": command_str, "page_changed": False}
+        try:
+            parts = self.browser._parse_command_line(command_str)
+        except Exception as e:
+            title, url = self._get_page_context()
+            return ExecutionResult(
+                success=False,
+                output=f"Parse error: {str(e)}",
+                command=command_str,
+                page_changed=False,
+                error_type=ErrorType.VALIDATION,
+                page_title=title,
+                page_url=url
+            )
         
         cmd = parts[0].lower()
         args = parts[1:]
         
+        # Capture state before execution
         try:
-            url_before = self.browser.driver.current_url
-        except:
+            url_before = self.browser.page.url
+        except Exception:
             url_before = None
         
-        if cmd not in self.commands:
-            return {"success": False, "output": f"Unknown: {cmd}", "command": command_str, "page_changed": False}
-        
+        # Execute command
         try:
             if cmd == 'scan':
                 self.commands[cmd](*args)
                 output = self._format_scan_results()
-                return {"success": True, "output": output, "command": command_str, "page_changed": False}
+                title, url = self._get_page_context()
+                return ExecutionResult(
+                    success=True,
+                    output=output,
+                    command=command_str,
+                    page_changed=False,
+                    page_title=title,
+                    page_url=url
+                )
             
             elif cmd == 'go':
+                url_arg = args[0] if args else ''
                 self.commands[cmd](*args)
-                try:
-                    url_after = self.browser.driver.current_url
-                    changed = url_after != url_before
-                except:
-                    changed = True
-                return {"success": True, "output": f"Navigated to {args[0] if args else 'page'}", "command": command_str, "page_changed": changed}
+                
+                title, url_after = self._get_page_context()
+                changed = url_after != url_before if url_before else True
+                
+                output = f"Successfully navigated to {url_arg}"
+                if title:
+                    output += f"\nPage loaded: {title}"
+                
+                return ExecutionResult(
+                    success=True,
+                    output=output,
+                    command=command_str,
+                    page_changed=changed,
+                    page_title=title,
+                    page_url=url_after
+                )
+            
+            elif cmd == 'title':
+                title, url = self._get_page_context()
+                return ExecutionResult(
+                    success=True,
+                    output=f"Page title: {title}",
+                    command=command_str,
+                    page_changed=False,
+                    page_title=title,
+                    page_url=url
+                )
+            
+            elif cmd == 'url':
+                title, url = self._get_page_context()
+                return ExecutionResult(
+                    success=True,
+                    output=f"Current URL: {url}",
+                    command=command_str,
+                    page_changed=False,
+                    page_title=title,
+                    page_url=url
+                )
             
             else:
+                # Execute command
                 self.commands[cmd](*args)
                 
-                # Check for page change
+                # Check for page changes
+                page_changed = False
+                url_after = url_before
+                
                 try:
-                    url_after = self.browser.driver.current_url
-                    page_changed = url_after != url_before
-                except:
+                    url_after = self.browser.page.url
+                    page_changed = (url_after != url_before)
+                except Exception:
                     page_changed = False
                 
-                output = f"{cmd} completed"
-                if page_changed:
-                    output += f" (page changed to {url_after})"
+                # Special handling for Enter key - give page time to navigate
+                if cmd == 'press' and args and args[0].lower() == 'enter': # Allow navigation to complete
+                    try:
+                        url_after_wait = self.browser.page.url
+                        if url_after_wait != url_before:
+                            page_changed = True
+                            url_after = url_after_wait
+                    except Exception:
+                        pass
                 
-                return {"success": True, "output": output, "command": command_str, "page_changed": page_changed}
+                title, url_current = self._get_page_context()
+                
+                # Build output message
+                output = f"Command '{cmd}' completed successfully"
+                
+                if page_changed:
+                    output += f"\n\nPAGE NAVIGATION OCCURRED:"
+                    output += f"\n  Previous: {url_before}"
+                    output += f"\n  Current: {url_current}"
+                    if title:
+                        output += f"\n  New page: {title}"
+                    output += "\n\nWARNING: All previous element numbers are now INVALID"
+                    output += "\n         You MUST run 'scan' again before using click/type"
+                
+                return ExecutionResult(
+                    success=True,
+                    output=output,
+                    command=command_str,
+                    page_changed=page_changed,
+                    page_title=title,
+                    page_url=url_current
+                )
         
         except Exception as e:
             error_msg = str(e)
-            error_type = "unknown"
             
-            if "intercepts pointer" in error_msg or "intercepted" in error_msg:
-                error_type = "overlay"
-            elif "Timeout" in error_msg or "timeout" in error_msg:
-                error_type = "timeout"
-            elif "not attached" in error_msg or "detached" in error_msg:
-                error_type = "stale"
+            # Classify error
+            error_type = ErrorType.UNKNOWN
+            if "intercept" in error_msg.lower():
+                error_type = ErrorType.OVERLAY
+            elif "timeout" in error_msg.lower():
+                error_type = ErrorType.TIMEOUT
+            elif "not attached" in error_msg.lower() or "detached" in error_msg.lower():
+                error_type = ErrorType.STALE
             
-            return {
-                "success": False,
-                "output": f"Error: {error_msg[:120]}",
-                "command": command_str,
-                "error_type": error_type,
-                "page_changed": False
-            }
+            # Truncate long errors
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            
+            title, url = self._get_page_context()
+            
+            return ExecutionResult(
+                success=False,
+                output=f"Error: {error_msg}",
+                command=command_str,
+                page_changed=False,
+                error_type=error_type,
+                page_title=title,
+                page_url=url
+            )
     
     def _format_scan_results(self) -> str:
-        """Format scan results clearly."""
+        """Format scan results with clear structure."""
         if not self.browser.element_map:
-            return "No elements found on page"
+            return "SCAN COMPLETE: No elements found on page"
         
         by_type: Dict[str, List[Tuple[int, str]]] = {}
         for idx, meta in self.browser.element_map.items():
-            elem_type = meta['type'].lower()
+            elem_type = meta.get('type', 'unknown').lower()
+            label = meta.get('label', 'no label')
+            label = label[:80].replace('\n', ' ').strip()
+            
             if elem_type not in by_type:
                 by_type[elem_type] = []
-            label = meta['label'][:60].replace('\n', ' ')
             by_type[elem_type].append((idx, label))
         
-        lines = [f"Found {len(self.browser.element_map)} elements"]
+        lines = []
+        lines.append(f"SCAN COMPLETE - Found {len(self.browser.element_map)} elements")
+        lines.append("=" * 70)
         
+        # Show inputs and textareas first (most commonly needed)
         for elem_type in ['input', 'textarea', 'button', 'link']:
             if elem_type in by_type:
                 items = by_type[elem_type]
-                lines.append(f"\n{elem_type.upper()}S:")
-                for idx, label in items[:8]:
+                lines.append(f"\n{elem_type.upper()}S ({len(items)}):")
+                for idx, label in items[:15]:
                     lines.append(f"  [{idx}] {label}")
-                if len(items) > 8:
-                    lines.append(f"  ...+{len(items)-8} more")
+                if len(items) > 15:
+                    lines.append(f"  ... and {len(items)-15} more {elem_type}s")
+        
+        # Show other element types
+        other_types = [t for t in by_type.keys() 
+                      if t not in ['input', 'textarea', 'button', 'link']]
+        if other_types:
+            lines.append(f"\nOTHER ELEMENTS:")
+            for t in other_types:
+                count = len(by_type[t])
+                lines.append(f"  {count} {t}(s)")
+        
+        lines.append("\n" + "=" * 70)
+        lines.append("Use element numbers above with: click N, type N \"text\", etc.")
         
         return "\n".join(lines)
     
-    def _build_context(self) -> str:
-        """Build context summary."""
+    def _build_context_summary(self) -> str:
+        """Build human-readable context summary."""
         parts = []
         
-        try:
-            url = self.browser.driver.current_url
-            title = self.browser.driver.title
-            parts.append(f"Current: {title}")
+        title, url = self._get_page_context()
+        
+        if title and url:
+            if len(title) > 70:
+                title = title[:70] + "..."
+            parts.append(f"Page: {title}")
             parts.append(f"URL: {url}")
-        except:
-            parts.append("Page info unavailable")
+        else:
+            parts.append("Page context unavailable")
         
         if self.browser.element_map:
-            types = {}
+            type_counts = {}
             for meta in self.browser.element_map.values():
-                t = meta['type'].lower()
-                types[t] = types.get(t, 0) + 1
-            parts.append(f"Elements in map: {', '.join(f'{c} {t}' for t,c in types.items())}")
+                elem_type = meta.get('type', 'unknown').lower()
+                type_counts[elem_type] = type_counts.get(elem_type, 0) + 1
+            
+            elem_summary = ', '.join(f"{count} {typ}" for typ, count in sorted(type_counts.items()))
+            parts.append(f"Scanned: {elem_summary}")
         else:
-            parts.append("No elements currently mapped")
+            parts.append("No elements scanned yet")
         
         return " | ".join(parts)
     
     def _call_llm(self, user_message: str) -> str:
-        """Call LLM with context management."""
+        """Call LLM with managed conversation history."""
         self.api_calls_made += 1
         
-        self.conversation_history.append({"role": "user", "content": user_message})
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_message
+        })
         
-        # Keep last 5 exchanges (10 messages)
         messages = [
             {"role": "system", "content": self.system_prompt},
-            *self.conversation_history[-10:]
+            *self.conversation_history[-self.MAX_CONVERSATION_MESSAGES:]
         ]
         
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=250
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=250
+            )
+            
+            assistant_message = response.choices[0].message.content.strip()
+            
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+            
+            return assistant_message
         
-        assistant_message = response.choices[0].message.content.strip()
-        self.conversation_history.append({"role": "assistant", "content": assistant_message})
-        
-        return assistant_message
+        except Exception as e:
+            raise RuntimeError(f"LLM API call failed: {str(e)}")
     
-    def execute_task(self, task: str, max_rounds: int = 12):
-        """Execute task with adaptive planning."""
-        console.print(f"\n[bold cyan]Task:[/bold cyan] {task}")
-        console.print(f"[dim]Model: {self.model}[/dim]\n")
+    def _build_feedback(self, result: ExecutionResult, task: str) -> str:
+        """Build comprehensive feedback message for LLM."""
+        lines = []
         
-        round_num = 0
-        llm_response = self._call_llm(f"Task: {task}\n\nPlan your first 2-4 actions based on what you need to do first.")
+        # Result section
+        lines.append("EXECUTION RESULT")
+        lines.append("=" * 70)
+        lines.append(f"Command: {result.command}")
+        lines.append(f"Status: {'SUCCESS' if result.success else 'FAILED'}")
+        lines.append("")
         
-        while round_num < max_rounds:
-            round_num += 1
+        if result.success:
+            lines.append("Output:")
+            lines.append(result.output)
+        else:
+            lines.append("Error:")
+            lines.append(result.output)
             
-            plan = self._parse_action_plan(llm_response)
+            # Add recovery suggestions
+            if result.error_type == ErrorType.VALIDATION:
+                lines.append("\nRecovery: Check your command syntax or scan for elements first")
+            elif result.error_type == ErrorType.STALE:
+                lines.append("\nRecovery: Page changed - run 'scan' again to get fresh element numbers")
+            elif result.error_type == ErrorType.OVERLAY:
+                lines.append("\nRecovery: Try 'press Escape' to close any overlays, then retry")
+            elif result.error_type == ErrorType.TIMEOUT:
+                lines.append("\nRecovery: Page is slow - try again or use a different approach")
+        
+        lines.append("\n" + "=" * 70)
+        
+        # Current page state - ALWAYS SHOW THIS
+        lines.append("\nCURRENT PAGE STATE")
+        lines.append("-" * 70)
+        
+        if result.page_title and result.page_url:
+            lines.append(f"CURRENT PAGE TITLE: {result.page_title}")
+            lines.append(f"CURRENT PAGE URL: {result.page_url}")
+        else:
+            lines.append("CURRENT PAGE: Unable to determine")
+        
+        lines.append("-" * 70)
+        
+        # Task completion check
+        lines.append(f"\nORIGINAL TASK: {task}")
+        lines.append("\nTASK COMPLETION CHECK:")
+        lines.append("  1. Look at CURRENT PAGE TITLE and CURRENT PAGE URL above")
+        lines.append("  2. Does this match what the task asked for?")
+        lines.append("  3. If YES -> Respond with: DONE")
+        lines.append("  4. If NO -> Respond with: COMMAND: <next single command>")
+        
+        # Warning for consecutive failures
+        if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+            lines.append(f"\nWARNING: {self.consecutive_failures} consecutive failures")
+            lines.append("Consider trying a different approach")
+        
+        return "\n".join(lines)
+    
+    def execute_task(self, task: str, max_steps: int = None):
+        """Execute task with intelligent single-step execution."""
+        if max_steps is None:
+            max_steps = self.DEFAULT_MAX_STEPS
+        
+        console.print(f"\n[bold cyan]════════════════════════════════════════[/bold cyan]")
+        console.print(f"[bold cyan]TASK: {task}[/bold cyan]")
+        console.print(f"[bold cyan]════════════════════════════════════════[/bold cyan]")
+        console.print(f"[dim]Model: {self.model} | Max steps: {max_steps}[/dim]\n")
+        
+        self.step_count = 0
+        self.original_task = task
+        
+        # Get initial command
+        try:
+            initial_prompt = (
+                f"Task: {task}\n\n"
+                f"What is the FIRST single command needed to accomplish this task?\n"
+                f"Respond with ONE command only."
+            )
+            llm_response = self._call_llm(initial_prompt)
+        except Exception as e:
+            console.print(f"[bold red]LLM Error:[/bold red] {e}")
+            return
+        
+        # Main execution loop
+        while self.step_count < max_steps:
+            self.step_count += 1
             
-            if plan['done']:
-                console.print(f"\n[bold green]Task Complete[/bold green]")
-                if plan['reasoning']:
-                    console.print(f"[dim]{plan['reasoning']}[/dim]")
-                console.print(f"[dim]Rounds: {round_num}, API calls: {self.api_calls_made}[/dim]\n")
-                break
+            # Parse LLM response
+            parsed = self._parse_response(llm_response)
             
-            complexity_color = "green" if plan['complexity'] <= 3 else "yellow" if plan['complexity'] <= 6 else "red"
-            console.print(f"[bold yellow]Round {round_num}[/bold yellow] [{complexity_color}]Complexity {plan['complexity']}[/{complexity_color}]")
-            if plan['reasoning']:
-                console.print(f"[dim]{plan['reasoning']}[/dim]")
-            
-            if not plan['actions']:
-                console.print("[yellow]No actions provided[/yellow]")
-                context = self._build_context()
-                llm_response = self._call_llm(f"You provided no actions.\n\n{context}\n\nEither provide 2-4 actions or respond DONE.")
+            # Handle parse errors
+            if 'error' in parsed:
+                console.print(f"[red]Parse Error:[/red] {parsed['error']}")
+                console.print(f"[dim]Response was: {llm_response[:200]}[/dim]\n")
+                
+                try:
+                    llm_response = self._call_llm(
+                        f"Your response was invalid: {parsed['error']}\n\n"
+                        "Please respond with either:\n"
+                        "  COMMAND: <single command>\n"
+                        "  REASONING: <why>\n\n"
+                        "OR:\n"
+                        "  DONE\n"
+                        "  REASONING: <what you accomplished>"
+                    )
+                except Exception as e:
+                    console.print(f"[red]LLM Error:[/red] {e}")
+                    break
                 continue
             
-            # Execute actions
-            results = []
-            page_changed = False
+            # Check if task is complete
+            if parsed.get('done'):
+                reasoning = parsed.get('reasoning', 'No reasoning provided')
+                
+                console.print(f"\n[bold green]{'=' * 50}[/bold green]")
+                console.print(f"[bold green]TASK COMPLETED[/bold green]")
+                console.print(f"[bold green]{'=' * 50}[/bold green]")
+                console.print(f"\n[white]{reasoning}[/white]\n")
+                
+                console.print(f"[bold cyan]Summary:[/bold cyan]")
+                console.print(f"  Steps taken: {self.step_count}")
+                console.print(f"  API calls: {self.api_calls_made}")
+                
+                title, url = self._get_page_context()
+                if title and url:
+                    console.print(f"  Final page: {title}")
+                    console.print(f"  Final URL: {url}")
+                
+                console.print()
+                return
             
-            for i, action in enumerate(plan['actions'], 1):
-                console.print(f"  [{i}] {action}")
-                
-                result = self._execute_command(action)
-                results.append(result)
-                
-                if result['success']:
-                    console.print(f"      [green]✓[/green] {result['output']}")
-                    if result.get('page_changed'):
-                        page_changed = True
-                    self.consecutive_failures = 0
-                else:
-                    console.print(f"      [red]✗[/red] {result['output']}")
-                    self.consecutive_failures += 1
-                    break  # Stop on error
+            # Execute command
+            command = parsed['command']
+            reasoning = parsed.get('reasoning', 'No reasoning provided')
+            
+            console.print(f"[bold yellow]Step {self.step_count}[/bold yellow]")
+            console.print(f"[dim]Reasoning: {reasoning}[/dim]")
+            console.print(f"[cyan]Command: {command}[/cyan]")
+            
+            result = self._execute_command(command)
+            
+            # Display result
+            if result.success:
+                console.print(f"[green]Status: SUCCESS[/green]")
+                self.consecutive_failures = 0
+            else:
+                console.print(f"[red]Status: FAILED[/red]")
+                self.consecutive_failures += 1
+            
+            # Show output (truncated for display)
+            output_lines = result.output.split('\n')
+            for line in output_lines[:10]:
+                if line.strip():
+                    console.print(f"  {line}")
+            if len(output_lines) > 10:
+                console.print(f"  ... ({len(output_lines) - 10} more lines)")
             
             console.print()
             
-            # Build feedback
-            feedback = []
+            # Build feedback for next iteration
+            feedback = self._build_feedback(result, task)
             
-            all_succeeded = all(r['success'] for r in results)
-            
-            if all_succeeded:
-                feedback.append(f"All {len(results)} actions completed successfully")
-                if page_changed:
-                    feedback.append("Page changed - previous elements are now invalid")
-            else:
-                failed = results[-1]
-                feedback.append(f"Failed at: {failed['command']}")
-                feedback.append(f"Error: {failed['output']}")
-                
-                error_type = failed.get('error_type')
-                if error_type == 'validation':
-                    feedback.append("Fix: Element doesn't exist in current scan. Scan again to refresh elements.")
-                elif error_type == 'stale':
-                    feedback.append("Fix: Page changed, elements stale. Scan again to get current elements.")
-                elif error_type == 'overlay':
-                    feedback.append("Fix: Something blocking click. Try 'press Escape' then retry.")
-            
-            # Add scan results if any
-            for r in results:
-                if 'Found' in r['output'] and 'elements' in r['output']:
-                    feedback.append(f"\nScan results:\n{r['output']}")
-                    break
-            
-            # Add current state
-            feedback.append(f"\nCurrent state:\n{self._build_context()}")
-            
-            # Warn if stuck
-            if self.consecutive_failures >= 3:
-                feedback.append(f"\n⚠ {self.consecutive_failures} consecutive failures - try completely different approach")
-            
-            feedback_text = "\n".join(feedback)
-            
-            # Get next plan
-            if all_succeeded and page_changed:
-                llm_response = self._call_llm(f"{feedback_text}\n\nPage changed. Scan to see new elements, then plan next 2-4 actions.")
-            else:
-                llm_response = self._call_llm(f"{feedback_text}\n\nPlan next 2-4 actions or respond DONE.")
+            # Get next command
+            try:
+                llm_response = self._call_llm(feedback)
+            except Exception as e:
+                console.print(f"[red]LLM Error:[/red] {e}")
+                break
         
-        if round_num >= max_rounds:
-            console.print(f"[yellow]Reached max rounds ({max_rounds})[/yellow]")
-            console.print(f"[dim]State: {self._build_context()}[/dim]")
-            console.print(f"[dim]API calls: {self.api_calls_made}[/dim]\n")
+        # Max steps reached
+        if self.step_count >= max_steps:
+            console.print(f"[yellow]{'=' * 50}[/yellow]")
+            console.print(f"[yellow]Maximum steps reached ({max_steps})[/yellow]")
+            console.print(f"[yellow]{'=' * 50}[/yellow]")
+            console.print(f"\n[dim]Final state: {self._build_context_summary()}[/dim]")
+            console.print(f"[dim]API calls made: {self.api_calls_made}[/dim]\n")
     
     def interactive_mode(self):
-        """Interactive task execution."""
-        console.print("\n[bold green]Adaptive Browser Agent[/bold green]")
+        """Interactive mode for continuous task execution."""
+        console.print("\n[bold green]═══════════════════════════════════════════[/bold green]")
+        console.print("[bold green]    INTELLIGENT BROWSER AGENT v2.0      [/bold green]")
+        console.print("[bold green]═══════════════════════════════════════════[/bold green]")
         console.print(f"[dim]Model: {self.model}[/dim]")
-        console.print("[dim]Type 'quit' to exit, 'reset' to restart browser[/dim]\n")
+        console.print(f"[dim]Mode: Single-step execution with full observability[/dim]")
+        console.print(f"[dim]Commands: 'quit' to exit | 'reset' to restart browser[/dim]\n")
         
         try:
             while True:
-                task = console.input("[bold blue]Task> [/bold blue]").strip()
+                try:
+                    task = console.input("[bold blue]Task> [/bold blue]").strip()
+                except EOFError:
+                    break
                 
                 if not task:
                     continue
                 
                 if task.lower() in ['quit', 'exit', 'q']:
+                    console.print("[dim]Shutting down...[/dim]")
                     break
                 
                 if task.lower() == 'reset':
-                    self.browser.close()
-                    self.browser = BrowserAgent(headless=False)
-                    self.commands = build_command_registry(self.browser)
-                    console.print("[green]Browser reset[/green]\n")
+                    console.print("[yellow]Resetting browser...[/yellow]")
+                    try:
+                        if self._owns_browser:
+                            self.browser.close()
+                        self.browser = BrowserAgent(headless=False)
+                        self.commands = build_command_registry(self.browser)
+                        self._owns_browser = True
+                        console.print("[green]✓ Browser reset complete[/green]\n")
+                    except Exception as e:
+                        console.print(f"[red]Reset failed: {e}[/red]\n")
                     continue
                 
-                # Reset state
+                # Reset conversation state for new task
                 self.conversation_history = []
                 self.api_calls_made = 0
                 self.consecutive_failures = 0
@@ -479,21 +886,26 @@ KEY INSIGHT: You don't need to see the whole form/workflow upfront. Just handle 
                 try:
                     self.execute_task(task)
                 except KeyboardInterrupt:
-                    console.print("\n[yellow]Interrupted[/yellow]\n")
+                    console.print("\n[yellow]Task interrupted[/yellow]\n")
                 except Exception as e:
-                    console.print(f"[red]Error:[/red] {e}\n")
-                    import traceback
-                    console.print(f"[dim]{traceback.format_exc()}[/dim]\n")
+                    console.print(f"[red]Task execution error: {e}[/red]\n")
+                    if os.getenv("DEBUG"):
+                        import traceback
+                        console.print(f"[dim]{traceback.format_exc()}[/dim]\n")
         
         except KeyboardInterrupt:
-            console.print("\n")
+            console.print("\n[dim]Interrupted[/dim]")
         
         finally:
             self.close()
     
     def close(self):
-        """Cleanup."""
-        self.browser.close()
+        """Clean up resources."""
+        if self._owns_browser and hasattr(self, 'browser'):
+            try:
+                self.browser.close()
+            except Exception:
+                pass
     
     def __enter__(self):
         return self
@@ -504,22 +916,71 @@ KEY INSIGHT: You don't need to see the whole form/workflow upfront. Just handle 
 
 
 def main():
+    """Main entry point with CLI argument parsing."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Adaptive Browser Agent')
-    parser.add_argument('--headless', action='store_true')
-    parser.add_argument('--model', type=str, default=os.getenv('GROQ_MODEL', 'llama-3.1-8b-instant'))
+    parser = argparse.ArgumentParser(
+        description='Intelligent Single-Step Browser Agent',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --headless                    # Run in headless mode
+  %(prog)s --model llama-3.1-70b-versatile  # Use larger model
+  %(prog)s --max-steps 50                # Allow more steps
+        """
+    )
+    
+    parser.add_argument(
+        '--headless',
+        action='store_true',
+        help='Run browser in headless mode (no GUI)'
+    )
+    
+    parser.add_argument(
+        '--model',
+        type=str,
+        default=os.getenv('GROQ_MODEL', LLMBrowserAgent.DEFAULT_MODEL),
+        help=f'LLM model to use (default: {LLMBrowserAgent.DEFAULT_MODEL})'
+    )
+    
+    parser.add_argument(
+        '--api-key',
+        type=str,
+        help='Groq API key (or set GROQ_API_KEY env var)'
+    )
+    
+    parser.add_argument(
+        '--max-steps',
+        type=int,
+        default=25,
+        help='Maximum steps per task (default: 25)'
+    )
     
     args = parser.parse_args()
     
     try:
-        with LLMBrowserAgent(headless=args.headless, model=args.model) as agent:
+        with LLMBrowserAgent(
+            api_key=args.api_key,
+            headless=args.headless,
+            model=args.model
+        ) as agent:
+            agent.DEFAULT_MAX_STEPS = args.max_steps
             agent.interactive_mode()
+    
     except KeyboardInterrupt:
-        console.print("\n")
+        console.print("\n[dim]Interrupted[/dim]")
         sys.exit(130)
+    
+    except ValueError as e:
+        console.print(f"[bold red]Configuration Error:[/bold red] {e}")
+        console.print("[dim]Set GROQ_API_KEY environment variable or use --api-key[/dim]")
+        sys.exit(1)
+    
     except Exception as e:
-        console.print(f"[bold red]Fatal:[/bold red] {e}")
+        console.print(f"[bold red]Fatal Error:[/bold red] {e}")
+        if os.getenv("DEBUG"):
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
         sys.exit(1)
 
 
