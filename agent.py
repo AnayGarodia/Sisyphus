@@ -112,6 +112,7 @@ class LLMBrowserAgent:
         self.step_count = 0
         
         self.system_prompt = self._build_system_prompt()
+        
     
     def _build_system_prompt(self) -> str:
         """Build comprehensive system prompt for intelligent execution."""
