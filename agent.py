@@ -73,7 +73,7 @@ class LLMBrowserAgent:
     - Comprehensive error recovery
     """
     
-    MAX_CONVERSATION_MESSAGES = 14
+    MAX_CONVERSATION_MESSAGES = 10
     DEFAULT_MODEL = "llama-3.1-8b-instant"
     DEFAULT_MAX_STEPS = 25
     MAX_CONSECUTIVE_FAILURES = 3
@@ -116,77 +116,135 @@ class LLMBrowserAgent:
     
     def _build_system_prompt(self) -> str:
         """Build comprehensive system prompt for intelligent execution."""
-        return """
-You are a focused autonomous browser agent. 
-You can only interact with the web using explicit commands. 
-Your goal is to complete the user’s task as efficiently as possible — ideally in 1–3 steps.
+        return """You are an autonomous browser agent that executes ONE command at a time.
 
-AVAILABLE COMMANDS (use these exact tokens)
-NAVIGATION:
-  go <url>
-  refresh
-  reload          # alias for refresh
-  back
-  forward
-  home
-  url
-  title
-  history
-  nav_history
-  wait_load
-
-INTERACTION:
-  click <N>
-  double_click <N>
-  dblclick <N>    # alias for double_click
-  right_click <N>
-  type <N> "text"
-  press <key>     # e.g. Enter, Tab, Escape
-  hover <N>
-  select <N> "val"
-  check <N>
-  uncheck <N>
-  scroll_to <N>
-
-SCANNING:
-  scan <filter>   # filter ∈ {inputs, buttons, links}. filter is optional
-  info <N>
-
-SYSTEM:
-  stats
-  help
-
-Strictly adhere to the output of the commands. Dont try to add any other optional arguments. That wont work! Be careful with scan. General scan works well, use specific ones like 'scan inputs' or 'scan buttons' to find specific elements.
-
-Use commands only when they clearly help you achieve the goal. 
-DONE IS NOT A COMMAND: NEVER output `COMMAND: DONE`, `Command: DONE`, or `COMMAND: "DONE"`. To finish, output the literal token `DONE` on its own line (followed by REASONING). When DONE is emitted, the session stops.
-
-Avoid redundant steps like checking title, url, or waiting if the page already loaded successfully.
-
-Each step, respond **exactly** in this format:
-
-Step N
-Reasoning: <brief reasoning — one or two sentences max>
-Command: <exact command text OR write DONE if the task is finished>
-
-Rules:
-- Respond with ONE command per step.
-- NEVER write "Command: DONE". Only write `DONE` on a new line to end.
-- If the task appears completed (for example, correct page or expected element is present), output `DONE`.
-- Do NOT try to “verify” multiple times — assume success if the browser confirms it.
-- Think and act decisively. Avoid unnecessary scanning or looping.
-- Prioritize clarity and minimalism over verification.
+CRITICAL EFFICIENCY RULE:
+After ANY navigation (go, press Enter, clicking links), immediately check if the task is complete.
+Don't waste steps scanning or checking - if the page title/URL matches the goal, use FINISH: immediately.
 
 Example:
-Task: Open Discord website
+Task: Search YouTube for "cats"
+After press Enter → Page shows "cats - YouTube" → IMMEDIATELY use FINISH:
+DO NOT: scan inputs, check url, or do anything else first!
 
-Step 1
-Reasoning: The task is to open Discord, so I’ll navigate directly there.
-Command: go https://discord.com
+    RESPONSE FORMAT (use this exact format every time):
 
-Step 2
-Reasoning: The Discord page has successfully loaded. DONE
-"""
+    THINKING: <one sentence analyzing what to do next>
+    ACTION: <exact command with arguments>
+
+    OR when task is 100% complete:
+
+    THINKING: <brief explanation of what was accomplished>
+    FINISH: <summary of completion>
+
+    CRITICAL: NEVER write "ACTION: DONE" or "COMMAND: DONE". Use "FINISH:" on its own line to signal completion.
+
+    AVAILABLE COMMANDS:
+
+    Navigation:
+    go <url>           - Navigate to URL. Example: go https://google.com
+    back               - Go back one page
+    forward            - Go forward one page  
+    refresh            - Reload current page (alias: reload)
+    url                - Get current page URL
+    title              - Get current page title
+
+    Interaction (requires element ID from scan):
+    click <N>          - Click element N. Example: click 5
+    double_click <N>   - Double-click element N. Example: double_click 3
+    right_click <N>    - Right-click element N
+    type <N> "text"    - Type text into input N. Example: type 5 "hello world"
+    press <key>        - Press keyboard key. Example: press Enter (keys: Enter, Tab, Escape, ArrowDown, etc)
+    hover <N>          - Hover over element N
+    select <N> "val"   - Select dropdown option. Example: select 7 "option1"
+    check <N>          - Check checkbox N
+    uncheck <N>        - Uncheck checkbox N
+    scroll_to <N>      - Scroll element N into view
+
+    Scanning (use to get element IDs):
+    scan               - Scan ALL interactive elements on page. Returns numbered list.
+    scan inputs        - Scan ONLY input fields and textareas. More focused.
+    scan buttons       - Scan ONLY buttons. More focused.
+    scan links         - Scan ONLY links. More focused.
+    info <N>           - Get detailed info about element N
+
+    Utility:
+    wait_load          - Wait for page to finish loading
+    stats              - Show browser statistics
+
+    COMMAND OUTPUT:
+    - After each command, you receive execution result (SUCCESS or FAILED)
+    - SUCCESS: Command worked, output shows what happened
+    - FAILED: Error message with recovery suggestions
+    - CURRENT PAGE STATE: Always shows current page title and URL
+
+    CRITICAL RULES:
+
+    1. Element IDs from scan are ONLY valid until page navigates
+    - If you use "go", "back", "forward", or press Enter (causing navigation)
+    - ALL previous element IDs become INVALID
+    - You MUST run scan again before using click/type
+
+    2. Before using click, type, hover, etc., you MUST have scanned first
+    - Cannot use element ID without scanning
+    - Error "Element N not found" means you need to scan
+
+    3. Arguments are strict:
+    - Element commands need integer: click 5 (not click "5")
+    - Type command needs quotes: type 5 "text here"
+    - Go command needs full URL: go https://example.com
+
+    4. Efficiency:
+    - Use direct URLs when you know them (go https://twitter.com)
+    - Don't scan unless you need to interact with elements
+    - Don't check title/url unless specifically asked
+    - Trust success messages - move forward
+
+    5. Task completion:
+    - Check CURRENT PAGE STATE after each action
+    - If it matches task goal → use FINISH:
+    - Don't over-verify - if page loaded successfully, task may be done
+
+    ERROR RECOVERY:
+    - "Element N not found" → Run: scan inputs (or scan buttons)
+    - "Click intercepted" / "overlay" → Run: press Escape, then retry
+    - "Cannot type into button" → Run: scan inputs (to find actual input fields)
+    - "Page changed" / "invalid IDs" → Run: scan (to get fresh element IDs)
+    - "Timeout" → Run: wait_load, then retry
+
+    EXAMPLES:
+
+    Task: Open GitHub
+    THINKING: I'll navigate directly to GitHub's website.
+    ACTION: go https://github.com
+
+    [After seeing: SUCCESS - Page loaded: GitHub]
+    THINKING: Successfully navigated to GitHub homepage, task complete.
+    FINISH: GitHub homepage is now open and loaded.
+
+    ---
+
+    Task: Search Google for "python tutorials"
+    THINKING: Navigate to Google first.
+    ACTION: go https://google.com
+
+    [After seeing: SUCCESS - Page loaded: Google]
+    THINKING: Need to find the search box to enter query.
+    ACTION: scan inputs
+
+    [After seeing: [5] Search input field]
+    THINKING: Search box is element 5, I'll type the query.
+    ACTION: type 5 "python tutorials"
+
+    [After seeing: SUCCESS]
+    THINKING: Query entered, now submit with Enter.
+    ACTION: press Enter
+
+    [After seeing: SUCCESS - Page navigated to search results]
+    THINKING: Search results are displayed, task is complete.
+    FINISH: Successfully searched Google for "python tutorials" and results are now displayed.
+
+    Remember: Be decisive, trust successful executions, and use FINISH (not ACTION: DONE) when complete."""
     
     def _get_page_context(self) -> Tuple[Optional[str], Optional[str]]:
         """Get current page title and URL safely."""
@@ -204,29 +262,52 @@ Reasoning: The Discord page has successfully loaded. DONE
         if not lines:
             return {'error': 'Empty response'}
         
-        # Check for DONE
-        if lines[0].upper() == 'DONE':
-            reasoning = ''
-            for line in lines[1:]:
-                if line.upper().startswith('REASONING:'):
-                    reasoning = line.split(':', 1)[1].strip()
-                    break
-            return {'done': True, 'reasoning': reasoning}
-        
-        # Parse COMMAND
-        command = ''
-        reasoning = ''
+        thinking = ''
+        action = ''
+        finish = ''
         
         for line in lines:
-            if line.upper().startswith('COMMAND:'):
-                command = line.split(':', 1)[1].strip()
-            elif line.upper().startswith('REASONING:'):
-                reasoning = line.split(':', 1)[1].strip()
+            upper_line = line.upper()
+            
+            # Check for FINISH
+            if upper_line.startswith('FINISH:'):
+                finish = line.split(':', 1)[1].strip() if ':' in line else ''
+            # Check for ACTION
+            elif upper_line.startswith('ACTION:'):
+                action = line.split(':', 1)[1].strip() if ':' in line else ''
+            # Check for THINKING
+            elif upper_line.startswith('THINKING:'):
+                thinking = line.split(':', 1)[1].strip() if ':' in line else ''
+            # Legacy COMMAND support
+            elif upper_line.startswith('COMMAND:'):
+                action = line.split(':', 1)[1].strip() if ':' in line else ''
+            # Legacy REASONING support
+            elif upper_line.startswith('REASONING:'):
+                thinking = line.split(':', 1)[1].strip() if ':' in line else ''
         
-        if not command:
-            return {'error': 'No command found in response'}
+        # Check if task is finished
+        if finish:
+            return {
+                'done': True,
+                'thinking': thinking,
+                'finish_message': finish
+            }
         
-        return {'done': False, 'command': command, 'reasoning': reasoning}
+        # Must have an action
+        if not action:
+            return {'error': 'No ACTION or FINISH found in response'}
+        
+        # Check for invalid "DONE" as action
+        if action.upper() == 'DONE':
+            return {
+                'error': 'Invalid response: Use "FINISH:" not "ACTION: DONE"'
+            }
+        
+        return {
+            'done': False,
+            'thinking': thinking,
+            'command': action
+        }
     
     def _validate_command(self, command_str: str) -> Tuple[bool, str]:
         """Validate command syntax and prerequisites."""
@@ -392,28 +473,32 @@ Reasoning: The Discord page has successfully loaded. DONE
                     page_changed = False
                 
                 # Special handling for Enter key - give page time to navigate
-                if cmd == 'press' and args and args[0].lower() == 'enter': # Allow navigation to complete
+                if cmd == 'press' and args and args[0].lower() == 'enter':
                     try:
+                        # Wait for navigation to start and complete
+                        self.browser.page.wait_for_load_state('domcontentloaded', timeout=5000)
                         url_after_wait = self.browser.page.url
                         if url_after_wait != url_before:
                             page_changed = True
                             url_after = url_after_wait
+                            title, url_current = self._get_page_context()
                     except Exception:
+                        # Navigation might not happen (e.g., just typing in a field)
                         pass
-                
+                    
                 title, url_current = self._get_page_context()
                 
                 # Build output message
-                output = f"Command '{cmd}' completed successfully"
+                output = f"✓ Command '{cmd}' executed successfully"
                 
                 if page_changed:
-                    output += f"\n\nPAGE NAVIGATION OCCURRED:"
-                    output += f"\n  Previous: {url_before}"
-                    output += f"\n  Current: {url_current}"
+                    output += f"\n\n⚠️  PAGE NAVIGATION DETECTED:"
+                    output += f"\n  Previous URL: {url_before}"
+                    output += f"\n  Current URL: {url_current}"
                     if title:
-                        output += f"\n  New page: {title}"
-                    output += "\n\nWARNING: All previous element numbers are now INVALID"
-                    output += "\n         You MUST run 'scan' again before using click/type"
+                        output += f"\n  New page title: {title}"
+                    output += "\n\n🔄 IMPORTANT: All previous element IDs are now INVALID"
+                    output += "\n   You MUST run 'scan' again before using click/type commands"
                 
                 return ExecutionResult(
                     success=True,
@@ -444,7 +529,7 @@ Reasoning: The Discord page has successfully loaded. DONE
             
             return ExecutionResult(
                 success=False,
-                output=f"Error: {error_msg}",
+                output=f"❌ Error: {error_msg}",
                 command=command_str,
                 page_changed=False,
                 error_type=error_type,
@@ -455,7 +540,7 @@ Reasoning: The Discord page has successfully loaded. DONE
     def _format_scan_results(self) -> str:
         """Format scan results with clear structure."""
         if not self.browser.element_map:
-            return "SCAN COMPLETE: No elements found on page"
+            return "SCAN COMPLETE: No interactive elements found on this page"
         
         by_type: Dict[str, List[Tuple[int, str]]] = {}
         for idx, meta in self.browser.element_map.items():
@@ -468,14 +553,13 @@ Reasoning: The Discord page has successfully loaded. DONE
             by_type[elem_type].append((idx, label))
         
         lines = []
-        lines.append(f"SCAN COMPLETE - Found {len(self.browser.element_map)} elements")
-        lines.append("=" * 70)
+        lines.append(f"✓ SCAN COMPLETE - Found {len(self.browser.element_map)} interactive elements")
         
         # Show inputs and textareas first (most commonly needed)
         for elem_type in ['input', 'textarea', 'button', 'link']:
             if elem_type in by_type:
                 items = by_type[elem_type]
-                lines.append(f"\n{elem_type.upper()}S ({len(items)}):")
+                lines.append(f"\n📋 {elem_type.upper()}S ({len(items)}):")
                 for idx, label in items[:15]:
                     lines.append(f"  [{idx}] {label}")
                 if len(items) > 15:
@@ -485,13 +569,12 @@ Reasoning: The Discord page has successfully loaded. DONE
         other_types = [t for t in by_type.keys() 
                       if t not in ['input', 'textarea', 'button', 'link']]
         if other_types:
-            lines.append(f"\nOTHER ELEMENTS:")
+            lines.append(f"\n📦 OTHER ELEMENTS:")
             for t in other_types:
                 count = len(by_type[t])
-                lines.append(f"  {count} {t}(s)")
-        
-        lines.append("\n" + "=" * 70)
-        lines.append("Use element numbers above with: click N, type N \"text\", etc.")
+                lines.append(f"  • {count} {t}(s)")
+
+        lines.append("💡 Use these element IDs with: click N, type N \"text\", hover N, etc.")
         
         return "\n".join(lines)
     
@@ -540,8 +623,8 @@ Reasoning: The Discord page has successfully loaded. DONE
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.1,
-                max_tokens=250
+                temperature=0.3,
+                max_tokens=300
             )
             
             assistant_message = response.choices[0].message.content.strip()
@@ -557,70 +640,39 @@ Reasoning: The Discord page has successfully loaded. DONE
             raise RuntimeError(f"LLM API call failed: {str(e)}")
     
     def _build_feedback(self, result: ExecutionResult, task: str) -> str:
-        """Build comprehensive feedback message for LLM."""
+        """Build minimal feedback message for LLM."""
         lines = []
         
-        # Result section
-        lines.append("EXECUTION RESULT")
-        lines.append("=" * 70)
-        lines.append(f"Command: {result.command}")
-        lines.append(f"Status: {'SUCCESS' if result.success else 'FAILED'}")
-        lines.append("")
-        
+        # Status and output (compact)
         if result.success:
-            lines.append("Output:")
-            lines.append(result.output)
+            lines.append(f"✓ SUCCESS: {result.output}")
         else:
-            lines.append("Error:")
-            lines.append(result.output)
-            
-            # Add recovery suggestions
-            if result.error_type == ErrorType.VALIDATION:
-                lines.append("\nRecovery: Check your command syntax or scan for elements first")
-            elif result.error_type == ErrorType.STALE:
-                lines.append("\nRecovery: Page changed - run 'scan' again to get fresh element numbers")
-            elif result.error_type == ErrorType.OVERLAY:
-                lines.append("\nRecovery: Try 'press Escape' to close any overlays, then retry")
-            elif result.error_type == ErrorType.TIMEOUT:
-                lines.append("\nRecovery: Page is slow - try again or use a different approach")
+            lines.append(f"✗ FAILED: {result.output}")
         
-        lines.append("\n" + "=" * 70)
-        
-        # Current page state - ALWAYS SHOW THIS
-        lines.append("\nCURRENT PAGE STATE")
-        lines.append("-" * 70)
-        
+        # Current page state (always critical)
         if result.page_title and result.page_url:
-            lines.append(f"CURRENT PAGE TITLE: {result.page_title}")
-            lines.append(f"CURRENT PAGE URL: {result.page_url}")
-        else:
-            lines.append("CURRENT PAGE: Unable to determine")
+            lines.append(f"\nPage: {result.page_title}")
+            lines.append(f"URL: {result.page_url}")
         
-        lines.append("-" * 70)
+        # Only show task reminder every few steps or on failure
+        if not result.success or self.step_count % 3 == 0:
+            lines.append(f"\nTask: {task}")
         
-        # Task completion check
-        lines.append(f"\nORIGINAL TASK: {task}")
-        lines.append("\nTASK COMPLETION CHECK:")
-        lines.append("  1. Look at CURRENT PAGE TITLE and CURRENT PAGE URL above")
-        lines.append("  2. Does this match what the task asked for?")
-        lines.append("  3. If YES -> Respond with: DONE")
-        lines.append("  4. If NO -> Respond with: COMMAND: <next single command>")
-        
-        # Warning for consecutive failures
-        if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-            lines.append(f"\nWARNING: {self.consecutive_failures} consecutive failures")
-            lines.append("Consider trying a different approach")
+        # Consecutive failure warning (only when critical)
+        if self.consecutive_failures >= 2:
+            lines.append(f"\n⚠️ {self.consecutive_failures} failures - try different approach")
         
         return "\n".join(lines)
+        
     
     def execute_task(self, task: str, max_steps: int = None):
         """Execute task with intelligent single-step execution."""
         if max_steps is None:
             max_steps = self.DEFAULT_MAX_STEPS
         
-        console.print(f"\n[bold cyan]════════════════════════════════════════[/bold cyan]")
-        console.print(f"[bold cyan]TASK: {task}[/bold cyan]")
-        console.print(f"[bold cyan]════════════════════════════════════════[/bold cyan]")
+        console.print(f"\n[bold cyan]{'═' * 70}[/bold cyan]")
+        console.print(f"[bold cyan]🚀 TASK: {task}[/bold cyan]")
+        console.print(f"[bold cyan]{'═' * 70}[/bold cyan]")
         console.print(f"[dim]Model: {self.model} | Max steps: {max_steps}[/dim]\n")
         
         self.step_count = 0
@@ -629,13 +681,15 @@ Reasoning: The Discord page has successfully loaded. DONE
         # Get initial command
         try:
             initial_prompt = (
-                f"Task: {task}\n\n"
-                f"What is the FIRST single command needed to accomplish this task?\n"
-                f"Respond with ONE command only."
+                f"🎯 TASK: {task}\n\n"
+                f"Analyze this task and provide your FIRST action.\n"
+                f"Remember to respond with:\n"
+                f"THINKING: <your analysis>\n"
+                f"ACTION: <single command>"
             )
             llm_response = self._call_llm(initial_prompt)
         except Exception as e:
-            console.print(f"[bold red]LLM Error:[/bold red] {e}")
+            console.print(f"[bold red]❌ LLM Error:[/bold red] {e}")
             return
         
         # Main execution loop
@@ -647,70 +701,76 @@ Reasoning: The Discord page has successfully loaded. DONE
             
             # Handle parse errors
             if 'error' in parsed:
-                console.print(f"[red]Parse Error:[/red] {parsed['error']}")
-                console.print(f"[dim]Response was: {llm_response[:200]}[/dim]\n")
+                console.print(f"[red]⚠️  Parse Error:[/red] {parsed['error']}")
+                console.print(f"[dim]Raw response: {llm_response[:200]}...[/dim]\n")
                 
                 try:
                     llm_response = self._call_llm(
-                        f"Your response was invalid: {parsed['error']}\n\n"
-                        "Please respond with either:\n"
-                        "  COMMAND: <single command>\n"
-                        "  REASONING: <why>\n\n"
-                        "OR:\n"
-                        "  DONE\n"
-                        "  REASONING: <what you accomplished>"
+                        f"❌ Your response format was invalid: {parsed['error']}\n\n"
+                        "Please respond using the EXACT format:\n\n"
+                        "THINKING: <one sentence>\n"
+                        "ACTION: <single command>\n\n"
+                        "OR if task is complete:\n\n"
+                        "THINKING: <what you accomplished>\n"
+                        "FINISH: <summary>\n\n"
+                        "DO NOT write 'ACTION: DONE' - use 'FINISH:' instead!"
                     )
                 except Exception as e:
-                    console.print(f"[red]LLM Error:[/red] {e}")
+                    console.print(f"[red]❌ LLM Error:[/red] {e}")
                     break
                 continue
             
             # Check if task is complete
             if parsed.get('done'):
-                reasoning = parsed.get('reasoning', 'No reasoning provided')
+                thinking = parsed.get('thinking', 'No analysis provided')
+                finish_msg = parsed.get('finish_message', 'Task completed')
                 
-                console.print(f"\n[bold green]{'=' * 50}[/bold green]")
-                console.print(f"[bold green]TASK COMPLETED[/bold green]")
-                console.print(f"[bold green]{'=' * 50}[/bold green]")
-                console.print(f"\n[white]{reasoning}[/white]\n")
+                console.print(f"\n[bold green]{'═' * 70}[/bold green]")
+                console.print(f"[bold green]✅ TASK COMPLETED[/bold green]")
+                console.print(f"[bold green]{'═' * 70}[/bold green]")
                 
-                console.print(f"[bold cyan]Summary:[/bold cyan]")
-                console.print(f"  Steps taken: {self.step_count}")
-                console.print(f"  API calls: {self.api_calls_made}")
+                if thinking:
+                    console.print(f"\n[white]💭 Analysis: {thinking}[/white]")
+                console.print(f"[white]🎉 Result: {finish_msg}[/white]\n")
+                
+                console.print(f"[bold cyan]📈 Summary:[/bold cyan]")
+                console.print(f"  • Steps taken: {self.step_count}")
+                console.print(f"  • API calls: {self.api_calls_made}")
                 
                 title, url = self._get_page_context()
                 if title and url:
-                    console.print(f"  Final page: {title}")
-                    console.print(f"  Final URL: {url}")
+                    console.print(f"  • Final page: {title}")
+                    console.print(f"  • Final URL: {url}")
                 
                 console.print()
                 return
             
             # Execute command
             command = parsed['command']
-            reasoning = parsed.get('reasoning', 'No reasoning provided')
+            thinking = parsed.get('thinking', 'No analysis provided')
             
-            console.print(f"[bold yellow]Step {self.step_count}[/bold yellow]")
-            console.print(f"[dim]Reasoning: {reasoning}[/dim]")
-            console.print(f"[cyan]Command: {command}[/cyan]")
+            console.print(f"[bold yellow]━━━ Step {self.step_count} ━━━[/bold yellow]")
+            if thinking:
+                console.print(f"[dim]💭 {thinking}[/dim]")
+            console.print(f"[cyan]⚡ ACTION: {command}[/cyan]")
             
             result = self._execute_command(command)
             
             # Display result
             if result.success:
-                console.print(f"[green]Status: SUCCESS[/green]")
+                console.print(f"[green]✓ SUCCESS[/green]")
                 self.consecutive_failures = 0
             else:
-                console.print(f"[red]Status: FAILED[/red]")
+                console.print(f"[red]✗ FAILED[/red]")
                 self.consecutive_failures += 1
             
             # Show output (truncated for display)
             output_lines = result.output.split('\n')
-            for line in output_lines[:10]:
+            for line in output_lines[:12]:
                 if line.strip():
                     console.print(f"  {line}")
-            if len(output_lines) > 10:
-                console.print(f"  ... ({len(output_lines) - 10} more lines)")
+            if len(output_lines) > 12:
+                console.print(f"[dim]  ... ({len(output_lines) - 12} more lines)[/dim]")
             
             console.print()
             
@@ -721,22 +781,22 @@ Reasoning: The Discord page has successfully loaded. DONE
             try:
                 llm_response = self._call_llm(feedback)
             except Exception as e:
-                console.print(f"[red]LLM Error:[/red] {e}")
+                console.print(f"[red]❌ LLM Error:[/red] {e}")
                 break
         
         # Max steps reached
         if self.step_count >= max_steps:
-            console.print(f"[yellow]{'=' * 50}[/yellow]")
-            console.print(f"[yellow]Maximum steps reached ({max_steps})[/yellow]")
-            console.print(f"[yellow]{'=' * 50}[/yellow]")
-            console.print(f"\n[dim]Final state: {self._build_context_summary()}[/dim]")
-            console.print(f"[dim]API calls made: {self.api_calls_made}[/dim]\n")
+            console.print(f"[yellow]{'═' * 70}[/yellow]")
+            console.print(f"[yellow]⚠️  Maximum steps reached ({max_steps})[/yellow]")
+            console.print(f"[yellow]{'═' * 70}[/yellow]")
+            console.print(f"\n[dim]📍 Final state: {self._build_context_summary()}[/dim]")
+            console.print(f"[dim]📊 API calls made: {self.api_calls_made}[/dim]\n")
     
     def interactive_mode(self):
         """Interactive mode for continuous task execution."""
-        console.print("\n[bold green]═══════════════════════════════════════════[/bold green]")
-        console.print("[bold green]    INTELLIGENT BROWSER AGENT v2.0      [/bold green]")
-        console.print("[bold green]═══════════════════════════════════════════[/bold green]")
+        console.print("\n[bold green]{'═' * 70}[/bold green]")
+        console.print("[bold green]    🤖 INTELLIGENT BROWSER AGENT v2.0      [/bold green]")
+        console.print("[bold green]{'═' * 70}[/bold green]")
         console.print(f"[dim]Model: {self.model}[/dim]")
         console.print(f"[dim]Mode: Single-step execution with full observability[/dim]")
         console.print(f"[dim]Commands: 'quit' to exit | 'reset' to restart browser[/dim]\n")
@@ -744,7 +804,7 @@ Reasoning: The Discord page has successfully loaded. DONE
         try:
             while True:
                 try:
-                    task = console.input("[bold blue]Task> [/bold blue]").strip()
+                    task = console.input("[bold blue]🎯 Task> [/bold blue]").strip()
                 except EOFError:
                     break
                 
@@ -752,11 +812,11 @@ Reasoning: The Discord page has successfully loaded. DONE
                     continue
                 
                 if task.lower() in ['quit', 'exit', 'q']:
-                    console.print("[dim]Shutting down...[/dim]")
+                    console.print("[dim]👋 Shutting down...[/dim]")
                     break
                 
                 if task.lower() == 'reset':
-                    console.print("[yellow]Resetting browser...[/yellow]")
+                    console.print("[yellow]🔄 Resetting browser...[/yellow]")
                     try:
                         if self._owns_browser:
                             self.browser.close()
@@ -765,7 +825,7 @@ Reasoning: The Discord page has successfully loaded. DONE
                         self._owns_browser = True
                         console.print("[green]✓ Browser reset complete[/green]\n")
                     except Exception as e:
-                        console.print(f"[red]Reset failed: {e}[/red]\n")
+                        console.print(f"[red]❌ Reset failed: {e}[/red]\n")
                     continue
                 
                 # Reset conversation state for new task
@@ -776,15 +836,15 @@ Reasoning: The Discord page has successfully loaded. DONE
                 try:
                     self.execute_task(task)
                 except KeyboardInterrupt:
-                    console.print("\n[yellow]Task interrupted[/yellow]\n")
+                    console.print("\n[yellow]⚠️  Task interrupted[/yellow]\n")
                 except Exception as e:
-                    console.print(f"[red]Task execution error: {e}[/red]\n")
+                    console.print(f"[red]❌ Task execution error: {e}[/red]\n")
                     if os.getenv("DEBUG"):
                         import traceback
                         console.print(f"[dim]{traceback.format_exc()}[/dim]\n")
         
         except KeyboardInterrupt:
-            console.print("\n[dim]Interrupted[/dim]")
+            console.print("\n[dim]👋 Interrupted[/dim]")
         
         finally:
             self.close()
@@ -858,16 +918,16 @@ Examples:
             agent.interactive_mode()
     
     except KeyboardInterrupt:
-        console.print("\n[dim]Interrupted[/dim]")
+        console.print("\n[dim]👋 Interrupted[/dim]")
         sys.exit(130)
     
     except ValueError as e:
-        console.print(f"[bold red]Configuration Error:[/bold red] {e}")
+        console.print(f"[bold red]❌ Configuration Error:[/bold red] {e}")
         console.print("[dim]Set GROQ_API_KEY environment variable or use --api-key[/dim]")
         sys.exit(1)
     
     except Exception as e:
-        console.print(f"[bold red]Fatal Error:[/bold red] {e}")
+        console.print(f"[bold red]❌ Fatal Error:[/bold red] {e}")
         if os.getenv("DEBUG"):
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
