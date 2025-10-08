@@ -10,6 +10,7 @@ import re
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+from commands.registry import get_system_prompt_commands
 
 try:
     from groq import Groq
@@ -139,38 +140,7 @@ DO NOT: scan inputs, check url, or do anything else first!
 
     CRITICAL: NEVER write "ACTION: DONE" or "COMMAND: DONE". Use "FINISH:" on its own line to signal completion.
 
-    AVAILABLE COMMANDS:
-
-    Navigation:
-    go <url>           - Navigate to URL. Example: go https://google.com
-    back               - Go back one page
-    forward            - Go forward one page  
-    refresh            - Reload current page (alias: reload)
-    url                - Get current page URL
-    title              - Get current page title
-
-    Interaction (requires element ID from scan):
-    click <N>          - Click element N. Example: click 5
-    double_click <N>   - Double-click element N. Example: double_click 3
-    right_click <N>    - Right-click element N
-    type <N> "text"    - Type text into input N. Example: type 5 "hello world"
-    press <key>        - Press keyboard key. Example: press Enter (keys: Enter, Tab, Escape, ArrowDown, etc)
-    hover <N>          - Hover over element N
-    select <N> "val"   - Select dropdown option. Example: select 7 "option1"
-    check <N>          - Check checkbox N
-    uncheck <N>        - Uncheck checkbox N
-    scroll_to <N>      - Scroll element N into view
-
-    Scanning (use to get element IDs):
-    scan               - Scan ALL interactive elements on page. Returns numbered list.
-    scan inputs        - Scan ONLY input fields and textareas. More focused.
-    scan buttons       - Scan ONLY buttons. More focused.
-    scan links         - Scan ONLY links. More focused.
-    info <N>           - Get detailed info about element N
-
-    Utility:
-    wait_load          - Wait for page to finish loading
-    stats              - Show browser statistics
+    {commands_section}
 
     COMMAND OUTPUT:
     - After each command, you receive execution result (SUCCESS or FAILED)

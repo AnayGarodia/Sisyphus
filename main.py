@@ -9,6 +9,12 @@ from commands import build_command_registry, get_command_help
 from datetime import datetime
 import sys
 
+from commands.registry import (
+    build_command_registry,
+    get_command_help, 
+    get_commands_by_category,
+    find_command_spec
+)
 
 class BrowserAgent(BaseBrowserAgent, NavigationMixin, InteractionMixin, ScanningMixin):
     """
@@ -58,36 +64,41 @@ class BrowserAgent(BaseBrowserAgent, NavigationMixin, InteractionMixin, Scanning
         Args:
             command: Optional specific command to get help for
         """
-        help_text = get_command_help()
-        
         if command:
             # Show help for specific command
-            matching = [cmd for cmd in help_text if cmd.split()[0] == command.lower()]
+            spec = find_command_spec(command)
             
-            if matching:
-                console.print(f"\n[bold cyan]{matching[0]}[/bold cyan]")
-                console.print(f"  {help_text[matching[0]]}\n")
+            if spec:
+                console.print(f"\n[bold cyan]{spec.syntax}[/bold cyan]")
+                console.print(f"  {spec.description}")
+                
+                if spec.aliases:
+                    console.print(f"  [dim]Aliases: {', '.join(spec.aliases)}[/dim]")
+                
+                console.print()
             else:
                 console.print(f"[red]Unknown command:[/red] {command}")
                 console.print("[dim]Use 'help' to see all commands[/dim]\n")
         else:
-            # Show all commands grouped
+            # Show all commands grouped by category
             console.print("\n[bold cyan]AVAILABLE COMMANDS[/bold cyan]")
             console.print("=" * 80)
             
-            groups = {
-                'Navigation': ['go', 'refresh', 'back', 'forward', 'home', 'url', 'title', 'history', 'nav_history', 'wait_load'],
-                'Interaction': ['click', 'double_click', 'right_click', 'type', 'press', 'hover', 'select', 'check', 'uncheck', 'scroll_to'],
-                'Scanning': ['scan', 'info'],
-                'System': ['stats', 'help', 'exit/quit']
-            }
+            help_text = get_command_help()
+            groups = get_commands_by_category()
             
-            for group_name, commands in groups.items():
+            # Display in specific order
+            for group_name in ['Navigation', 'Interaction', 'Scanning', 'System']:
+                if group_name not in groups:
+                    continue
+                    
                 console.print(f"\n[bold yellow]{group_name}:[/bold yellow]")
-                for cmd in commands:
-                    for full_cmd, desc in help_text.items():
-                        if full_cmd.split()[0] == cmd:
-                            console.print(f"  [cyan]{full_cmd:30}[/cyan] {desc}")
+                
+                for cmd in groups[group_name]:
+                    # Find the syntax for this command
+                    for syntax, desc in help_text.items():
+                        if syntax.split()[0] == cmd:
+                            console.print(f"  [cyan]{syntax:30}[/cyan] {desc}")
                             break
             
             console.print("\n" + "=" * 80)
