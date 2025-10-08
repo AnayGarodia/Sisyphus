@@ -26,7 +26,7 @@ except ImportError:
     sys.exit(1)
 
 # Import agent
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from agent import LLMBrowserAgent
 except ImportError as e:
@@ -71,9 +71,47 @@ class CombinedVideoServer:
         self._setup_cors()
 
     def _setup_routes(self):
+        """Setup routes for static files and WebSocket"""
+        # Get the static directory (where HTML/CSS/JS files are)
+        static_dir = Path(__file__).parent / 'static'
+        
+        # WebSocket endpoint
         self.app.router.add_get('/ws', self.websocket_handler)
-        self.app.router.add_get('/', self.index_handler)
-        self.app.router.add_static('/static', Path(__file__).parent.parent / 'frontend', name='static')
+        
+        # Serve index.html at root
+        self.app.router.add_get('/', self.serve_index)
+        
+        # Serve app.html
+        self.app.router.add_get('/app.html', self.serve_app)
+        
+        # Serve all static files (CSS, JS)
+        self.app.router.add_static('/static/', static_dir, name='static')
+        
+        # Also serve CSS and JS files directly from root for convenience
+        self.app.router.add_get('/{filename:.+\\.css}', self.serve_static_file)
+        self.app.router.add_get('/{filename:.+\\.js}', self.serve_static_file)
+
+    async def serve_index(self, request):
+        """Serve the landing page"""
+        html_path = Path(__file__).parent / 'static' / 'index.html'
+        if not html_path.exists():
+            return web.Response(text="index.html not found", status=404)
+        return web.FileResponse(html_path)
+
+    async def serve_app(self, request):
+        """Serve the main application page"""
+        html_path = Path(__file__).parent / 'static' / 'app.html'
+        if not html_path.exists():
+            return web.Response(text="app.html not found", status=404)
+        return web.FileResponse(html_path)
+
+    async def serve_static_file(self, request):
+        """Serve CSS and JS files"""
+        filename = request.match_info['filename']
+        file_path = Path(__file__).parent / 'static' / filename
+        if not file_path.exists():
+            return web.Response(text=f"{filename} not found", status=404)
+        return web.FileResponse(file_path)
 
     def _setup_cors(self):
         cors = aiohttp_cors.setup(self.app, defaults={
@@ -85,10 +123,6 @@ class CombinedVideoServer:
         })
         for route in list(self.app.router.routes()):
             cors.add(route)
-
-    async def index_handler(self, request):
-        html_path = Path(__file__).parent.parent / 'frontend' / 'index.html'
-        return web.FileResponse(html_path)
 
     async def websocket_handler(self, request):
         ws = web.WebSocketResponse()
@@ -189,7 +223,7 @@ class CombinedVideoServer:
             if agent:
                 try: agent.close() 
                 except: pass
-            print("🔚 Playwright thread ended.")
+            print("📚 Playwright thread ended.")
 
     def _init_task_state(self, agent, task):
         agent.step_count = 0
@@ -270,7 +304,7 @@ class CombinedVideoServer:
 
             elif state['state'] == 'process_command_result':
                 result = state['result']
-                status_line = '✓ SUCCESS\n' if result.success else '✗ FAILED\n'
+                status_line = '✔ SUCCESS\n' if result.success else '✗ FAILED\n'
                 output_text = result.output if isinstance(result.output, str) else str(result.output)
                 full_output = f"{status_line}{output_text}\n"
                 state['terminal'].append(full_output)
@@ -300,7 +334,7 @@ class CombinedVideoServer:
         try:
             response = await asyncio.get_event_loop().run_in_executor(None, lambda: self.init_response_queue.get(timeout=30))
             if response['type'] == 'init_success':
-                await self.broadcast({'type': 'terminal', 'content': f'✓ Ready (Model: {response["model"]})\n', 'style': 'success'})
+                await self.broadcast({'type': 'terminal', 'content': f'✔ Ready (Model: {response["model"]})\n', 'style': 'success'})
                 await self.broadcast({'type': 'status', 'ready': True})
                 await self.start_streaming()
             else:
@@ -328,7 +362,7 @@ class CombinedVideoServer:
             try:
                 shot = await asyncio.get_event_loop().run_in_executor(None, lambda: self.screenshot_queue.get(timeout=1))
                 base64_data = base64.b64encode(shot).decode('utf-8')
-                await self.broadcast({'type': 'frame', 'data': f"data:image/png;base64,{base64_data}"})
+                await self.broadcast({'type': 'frame', 'data': f"data:image/png;base64,{base64_data}", 'timestamp': time.time()})
             except queue.Empty:
                 await asyncio.sleep(0.01)
             except asyncio.CancelledError: break
@@ -337,8 +371,6 @@ class CombinedVideoServer:
                 break
         print("🛑 Video stream loop ended")
 
-    # KEY CHANGE: This method is restored to its original state to correctly
-    # parse messages from the agent thread and send them to the frontend.
     async def execute_task(self, task):
         if not self.agent_ready.is_set():
             await self.broadcast({'type': 'error', 'message': 'Agent not initialized.'})
@@ -382,7 +414,7 @@ class CombinedVideoServer:
                     elif rtype == 'task_completed':
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': f'\n{"="*70}\n✓ DONE\n{"="*70}\n\n{response["reasoning"]}\n',
+                            'content': f'\n{"="*70}\n✔ DONE\n{"="*70}\n\n{response["reasoning"]}\n',
                             'style': 'success'
                         })
                         await self.broadcast({'type': 'command_history', 'commands': response['command_history']})
@@ -437,6 +469,8 @@ class CombinedVideoServer:
         self.start_thread()
         self.app.on_shutdown.append(self.on_shutdown)
         print(f"🚀 Server running at http://{self.host}:{self.port}")
+        print(f"📄 Landing page: http://{self.host}:{self.port}/")
+        print(f"🖥️  Application: http://{self.host}:{self.port}/app.html")
         web.run_app(self.app, host=self.host, port=self.port, print=lambda x: None)
 
 
