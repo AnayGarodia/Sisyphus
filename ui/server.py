@@ -602,13 +602,17 @@ class CombinedVideoServer:
         self.start_thread()
         self.app.on_shutdown.append(self.on_shutdown)
         
-        print(f"🚀 Server running at http://{self.host}:{self.port}")
-        print(f"🏠 Landing page: http://{self.host}:{self.port}/")
-        print(f"🖥️  Application: http://{self.host}:{self.port}/app")
+        # Use environment PORT if available (for Render/production)
+        actual_port = int(os.environ.get('PORT', self.port))
+        actual_host = os.environ.get('HOST', self.host)
+        
+        print(f"🚀 Server running at http://{actual_host}:{actual_port}")
+        print(f"🏠 Landing page: http://{actual_host}:{actual_port}/")
+        print(f"🖥️  Application: http://{actual_host}:{actual_port}/app")
         print(f"📁 Static files: {Path(__file__).parent / 'static'}")
         print(f"🔑 Make sure GROQ_API_KEY is set in environment")
         
-        web.run_app(self.app, host=self.host, port=self.port, print=lambda x: None)
+        web.run_app(self.app, host=actual_host, port=actual_port, print=lambda x: None)
 
 
 def main():
