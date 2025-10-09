@@ -638,6 +638,137 @@ class NavigationMixin:
             console.print(f"[yellow]Wait timeout:[/yellow] {e}")
             self.log_action("wait_for", str(e), success=False)
             return False
+        
+    def new_tab(self, url: str = None):
+        """
+        Open a new tab.
+        Usage: new_tab [url]
+        """
+        try:
+            # Create new page (tab)
+            new_page = self.context.new_page()
+            
+            # Navigate if URL provided
+            if url:
+                if not url.startswith(('http://', 'https://')):
+                    url = 'https://' + url
+                new_page.goto(url, timeout=self.timeout)
+                console.print(f"[green]New tab opened:[/green] {url}")
+            else:
+                console.print("[green]New blank tab opened[/green]")
+            
+            # Switch to the new tab
+            self.page = new_page
+            self.log_action("new_tab", url or "blank", success=True)
+            return True
+            
+        except Exception as e:
+            console.print(f"[red]Failed to open new tab:[/red] {e}")
+            self.log_action("new_tab", str(e), success=False)
+            return False
+
+    def close_tab(self, index: str = None):
+        """
+        Close current tab or specified tab by index.
+        Usage: close_tab [index]
+        """
+        try:
+            all_pages = self.context.pages
+            
+            if len(all_pages) <= 1:
+                console.print("[yellow]Cannot close last tab[/yellow]")
+                return False
+            
+            # Determine which tab to close
+            if index is None:
+                # Close current tab
+                tab_to_close = self.page
+                console.print("[yellow]Closing current tab...[/yellow]")
+            else:
+                # Close specified tab
+                try:
+                    idx = int(index)
+                    if idx < 1 or idx > len(all_pages):
+                        console.print(f"[red]Invalid tab index:[/red] {idx} (valid: 1-{len(all_pages)})")
+                        return False
+                    tab_to_close = all_pages[idx - 1]
+                except ValueError:
+                    console.print(f"[red]Invalid index:[/red] {index} (must be a number)")
+                    return False
+            
+            # Close the tab
+            tab_to_close.close()
+            
+            # If we closed the current tab, switch to another one
+            if tab_to_close == self.page:
+                self.page = self.context.pages[-1]
+                self.page.bring_to_front()
+            
+            console.print(f"[green]Tab closed. Current tab:[/green] {self.page.url}")
+            self.log_action("close_tab", index or "current", success=True)
+            return True
+            
+        except Exception as e:
+            console.print(f"[red]Failed to close tab:[/red] {e}")
+            self.log_action("close_tab", str(e), success=False)
+            return False
+
+    def switch_tab(self, index: str):
+        """
+        Switch to tab by index.
+        Usage: switch_tab <index>
+        """
+        try:
+            idx = int(index)
+            all_pages = self.context.pages
+            
+            if idx < 1 or idx > len(all_pages):
+                console.print(f"[red]Invalid tab index:[/red] {idx} (valid: 1-{len(all_pages)})")
+                return False
+            
+            # Switch to tab (convert to 0-indexed)
+            self.page = all_pages[idx - 1]
+            
+            # Explicitly bring tab to front
+            self.page.bring_to_front()
+            
+            console.print(f"[green]Switched to tab {idx}:[/green] {self.page.url}")
+            self.log_action("switch_tab", str(idx), success=True)
+            return True
+            
+        except ValueError:
+            console.print(f"[red]Invalid index:[/red] {index} (must be a number)")
+            return False
+        except Exception as e:
+            console.print(f"[red]Failed to switch tab:[/red] {e}")
+            self.log_action("switch_tab", str(e), success=False)
+            return False
+
+    def tabs(self):
+        """
+        List all open tabs.
+        Usage: tabs
+        """
+        try:
+            all_pages = self.context.pages
+            
+            console.print(f"\n[bold cyan]Open Tabs ({len(all_pages)}):[/bold cyan]")
+            
+            for idx, page in enumerate(all_pages, start=1):
+                is_current = "→" if page == self.page else " "
+                title = page.title()[:50] or "Untitled"
+                url = page.url[:60]
+                console.print(f"{is_current} [{idx}] {title}")
+                console.print(f"      [dim]{url}[/dim]")
+            
+            console.print()
+            self.log_action("tabs", f"{len(all_pages)} tabs", success=True)
+            return True
+            
+        except Exception as e:
+            console.print(f"[red]Failed to list tabs:[/red] {e}")
+            self.log_action("tabs", str(e), success=False)
+            return False
     
     def page_info(self) -> Dict:
         """

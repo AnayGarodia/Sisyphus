@@ -204,6 +204,35 @@ COMMAND_SPECS = [
         description='Show help',
         category='System'
     ),
+    CommandSpec(
+        name='new_tab',
+        method_name='new_tab',  
+        syntax='new_tab [url]',
+        description='Open a new tab at (optional) URL',
+        category='Navigation'
+    ),
+    CommandSpec(
+        name='close_tab',
+        method_name='close_tab',  
+        syntax='close_tab [index]',
+        description='Close current tab or specified tab by index.',
+        category='Navigation'
+    ),
+    CommandSpec(
+        name='switch_tab',
+        method_name='switch_tab',  
+        syntax='switch_tab <index>',
+        description='Switch to tab by index.',
+        category='Navigation'
+    ),
+    CommandSpec(
+        name='tabs',
+        method_name='tabs',  
+        syntax='tabs',
+        description='List all open tabs.',
+        category='Navigation'
+    ),
+
 ]
 
 

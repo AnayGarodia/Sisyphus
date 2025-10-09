@@ -3,167 +3,475 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sisyphus - AI Browser Agent</title>
-    <link rel="stylesheet" href="landing.css" />
+    <title>Sisyphus - Persistent AI Agent Platform</title>
+    <link rel="stylesheet" href="/static/landing.css" />
   </head>
   <body>
-    <!-- Navigation -->
-    <nav>
-      <div class="nav-container">
-        <div class="logo">⚡ Sisyphus</div>
-        <div class="nav-links">
-          <a href="#features">Features</a>
-          <a href="#how-it-works">How It Works</a>
-          <a href="app.html" class="btn-primary">Launch App</a>
-        </div>
-      </div>
-    </nav>
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+      <div class="loading-name">SISYPHUS</div>
+      <div class="loading-spinner"></div>
+    </div>
 
-    <!-- Hero Section -->
-    <section class="hero">
-      <div class="hero-bg"></div>
-      <div class="hero-grid"></div>
-      <div class="hero-content">
-        <span class="hero-badge">🤖 Powered by Advanced AI</span>
-        <h1>Meet Sisyphus</h1>
-        <p class="hero-subtitle">
-          The autonomous AI browser agent that never stops. Watch it navigate
-          the web, complete tasks, and handle repetitive workflows with
-          superhuman precision.
-        </p>
-        <div class="hero-cta">
-          <a href="app.html" class="btn-primary btn-large"> Launch Agent → </a>
-          <button class="btn-primary btn-secondary btn-large">View Demo</button>
-        </div>
+    <!-- Animated Grid Background -->
+    <div class="grid-background">
+      <div class="grid-container">
+        <div class="grid"></div>
       </div>
-    </section>
+    </div>
 
-    <!-- Features Section -->
-    <section id="features" class="features">
-      <h2 class="section-title">Powerful Capabilities</h2>
-      <p class="section-subtitle">
-        Built for automation, designed for reliability
-      </p>
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon">🎯</div>
-          <h3>Autonomous Navigation</h3>
-          <p>
-            Intelligently navigates websites, fills forms, and interacts with
-            complex interfaces without human intervention.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">📹</div>
-          <h3>Live Streaming</h3>
-          <p>
-            Watch your agent work in real-time with HD video streaming. Monitor
-            every action as it happens.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">⚡</div>
-          <h3>Lightning Fast</h3>
-          <p>
-            Optimized WebSocket architecture ensures minimal latency and maximum
-            performance for critical tasks.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🧠</div>
-          <h3>Context Aware</h3>
-          <p>
-            Understands complex instructions and adapts to changing web
-            environments dynamically.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🔄</div>
-          <h3>Never Gives Up</h3>
-          <p>
-            Like its namesake, Sisyphus persists through challenges and recovers
-            from errors automatically.
-          </p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">📊</div>
-          <h3>Full Transparency</h3>
-          <p>
-            Complete command logs and terminal output for debugging and audit
-            trails.
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <!-- How It Works Section -->
-    <section id="how-it-works" class="how-it-works">
-      <h2 class="section-title">How It Works</h2>
-      <p class="section-subtitle">
-        From task to completion in three simple steps
-      </p>
-      <div class="steps-container">
-        <div class="step">
-          <div class="step-number">1</div>
-          <div class="step-content">
-            <h3>Describe Your Task</h3>
-            <p>
-              Simply tell Sisyphus what you need in natural language. "Search
-              for Python tutorials on Google" or "Fill out this form with my
-              information."
-            </p>
+    <div class="content" id="mainContent">
+      <!-- Navigation -->
+      <nav>
+        <div class="logo">
+          <div class="logo-icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2v20M2 12h20" />
+            </svg>
           </div>
+          SISYPHUS
         </div>
-        <div class="step">
-          <div class="step-number">2</div>
-          <div class="step-content">
-            <h3>Watch It Work</h3>
-            <p>
-              Sisyphus analyzes the task, plans its approach, and executes with
-              precision. View the live browser feed as it works.
-            </p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-number">3</div>
-          <div class="step-content">
-            <h3>Review Results</h3>
-            <p>
-              Get detailed logs of every action taken, with reasoning
-              explanations and full transparency into the process.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
+        <ul class="nav-links">
+          <li><a href="#platform">Platform</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#demo">Demo</a></li>
+          <li><a href="#docs">Documentation</a></li>
+        </ul>
+        <button class="cta-button" id="navLaunchBtn">Launch Platform</button>
+      </nav>
 
-    <!-- CTA Section -->
-    <section class="cta-section">
-      <div class="cta-content">
-        <h2>Ready to Automate?</h2>
+      <!-- Hero Section -->
+      <section class="hero">
+        <div class="hero-tag">Persistent AI Agents</div>
+        <h1>
+          The Future of<br />
+          <span class="gradient-text">Autonomous Agents</span>
+        </h1>
         <p>
-          Start using Sisyphus today and let AI handle your repetitive browser
-          tasks.
+          Build, deploy, and manage persistent AI agents that learn, adapt, and
+          execute complex tasks autonomously. Watch them work in real-time with
+          live browser streaming.
         </p>
-        <a href="app.html" class="btn-primary btn-large"> Get Started Now → </a>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-      <div class="footer-content">
-        <div class="footer-links">
-          <a href="#">Documentation</a>
-          <a href="#">API</a>
-          <a href="#">GitHub</a>
-          <a href="#">Support</a>
+        <div class="hero-buttons">
+          <button class="button-primary" id="heroGetStartedBtn">
+            Get Started
+          </button>
+          <button class="button-secondary" id="heroDemoBtn">Watch Demo</button>
         </div>
-        <p class="copyright">
-          © 2025 Sisyphus. Built with AI and determination.
-        </p>
-      </div>
-    </footer>
+      </section>
 
-    <script src="landing.js"></script>
+      <!-- Stats -->
+      <section class="stats">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <h3>24/7</h3>
+            <p>Always Running</p>
+          </div>
+          <div class="stat-item">
+            <h3>∞</h3>
+            <p>Infinite Tasks</p>
+          </div>
+          <div class="stat-item">
+            <h3>100%</h3>
+            <p>Autonomous</p>
+          </div>
+          <div class="stat-item">
+            <h3>Real-time</h3>
+            <p>Live Monitoring</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Section -->
+      <section id="features" class="features">
+        <div class="section-header">
+          <div class="section-tag">Platform Capabilities</div>
+          <h2 class="section-title">Built for Persistence</h2>
+          <p class="section-subtitle">
+            Our platform enables AI agents to work continuously, learn from
+            experiences, and maintain context across sessions. True persistence,
+            true intelligence.
+          </p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <path
+                  d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
+                />
+              </svg>
+            </div>
+            <h3>Persistent Memory</h3>
+            <p>
+              Agents remember context, learn from interactions, and improve over
+              time. No information loss between sessions.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+            </div>
+            <h3>Real-Time Streaming</h3>
+            <p>
+              Watch your agents work with live browser feeds. Complete
+              visibility into every action, click, and decision.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <path
+                  d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+                />
+              </svg>
+            </div>
+            <h3>AI-Powered Reasoning</h3>
+            <p>
+              Advanced language models plan, reason, and execute complex
+              multi-step workflows with human-like intelligence.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <path
+                  d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+                />
+              </svg>
+            </div>
+            <h3>Adaptive Learning</h3>
+            <p>
+              Agents adapt to failures, learn from mistakes, and optimize their
+              strategies for better performance.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </div>
+            <h3>Error Recovery</h3>
+            <p>
+              Intelligent error handling automatically recovers from failures
+              and adapts to unexpected changes.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                stroke-width="2"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18M9 21V9" />
+              </svg>
+            </div>
+            <h3>Browser Automation</h3>
+            <p>
+              Navigate, click, type, and interact with any website. Full browser
+              control with visual feedback.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Demo Section -->
+      <section id="demo" class="demo">
+        <div class="demo-container">
+          <div class="demo-header section-header">
+            <div class="section-tag">See it in Action</div>
+            <h2 class="section-title">Agents at Work</h2>
+            <p class="section-subtitle">
+              Watch as persistent agents understand natural language, plan
+              complex workflows, and execute tasks while maintaining full
+              context.
+            </p>
+          </div>
+          <div class="demo-video">
+            <div class="video-placeholder">
+              <button class="play-button" id="demoPlayBtn">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+                </svg>
+              </button>
+              <p>Live Agent Demo</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Action Buttons Section -->
+      <section class="action-section">
+        <div class="action-container">
+          <h2>Ready to Get Started?</h2>
+          <p>Choose how you'd like to proceed</p>
+          <div class="action-grid">
+            <button class="action-card" id="waitlistBtn">
+              <div class="action-icon">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="8.5" cy="7" r="4" />
+                  <polyline points="17 11 19 13 23 9" />
+                </svg>
+              </div>
+              <h3>Join Waitlist</h3>
+              <p>Get early access to Sisyphus</p>
+            </button>
+
+            <button class="action-card" id="contactBtn">
+              <div class="action-icon">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  />
+                </svg>
+              </div>
+              <h3>Contact Us</h3>
+              <p>Talk to our team</p>
+            </button>
+
+            <button class="action-card" id="productDemoBtn">
+              <div class="action-icon">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="2" y="7" width="20" height="14" rx="2" />
+                  <path d="M16 3l-4 4-4-4" />
+                </svg>
+              </div>
+              <h3>Product Demo</h3>
+              <p>See Sisyphus in action</p>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA Section -->
+      <section class="cta-section">
+        <div class="cta-box">
+          <h2>Ready to Build Persistent Agents?</h2>
+          <p>
+            Join the future of autonomous AI. Deploy your first agent in
+            minutes.
+          </p>
+          <button class="button-primary" id="ctaLaunchBtn">
+            Launch Platform Now
+          </button>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer>
+        <div class="footer-content">
+          <div class="footer-brand">
+            <h3>SISYPHUS</h3>
+            <p>
+              The persistent AI agent platform. Build agents that never stop
+              learning, never stop working.
+            </p>
+          </div>
+          <div class="footer-links">
+            <h4>Platform</h4>
+            <ul>
+              <li><a href="#features">Features</a></li>
+              <li><a href="#demo">Demo</a></li>
+              <li><a href="#" id="footerLaunchLink">Launch</a></li>
+            </ul>
+          </div>
+          <div class="footer-links">
+            <h4>Resources</h4>
+            <ul>
+              <li><a href="#docs">Documentation</a></li>
+              <li><a href="#api">API Reference</a></li>
+              <li><a href="#examples">Examples</a></li>
+            </ul>
+          </div>
+          <div class="footer-links">
+            <h4>Company</h4>
+            <ul>
+              <li><a href="#about">About</a></li>
+              <li><a href="#blog">Blog</a></li>
+              <li><a href="#" id="footerContactLink">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>
+            &copy; 2024 Sisyphus. Building the future of persistent AI agents.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Modals -->
+    <!-- Waitlist Modal -->
+    <div class="modal" id="waitlistModal">
+      <div class="modal-content">
+        <button class="modal-close" data-modal="waitlistModal">&times;</button>
+        <h2>Join the Waitlist</h2>
+        <p>
+          Get early access to Sisyphus and be the first to build persistent AI
+          agents.
+        </p>
+        <form id="waitlistForm">
+          <input type="text" placeholder="Full Name" required />
+          <input type="email" placeholder="Email Address" required />
+          <input type="text" placeholder="Company (Optional)" />
+          <textarea
+            placeholder="Tell us about your use case"
+            rows="4"
+          ></textarea>
+          <button type="submit" class="button-primary">Join Waitlist</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Contact Modal -->
+    <div class="modal" id="contactModal">
+      <div class="modal-content">
+        <button class="modal-close" data-modal="contactModal">&times;</button>
+        <h2>Contact Us</h2>
+        <p>Have questions? Our team is here to help.</p>
+        <form id="contactForm">
+          <input type="text" placeholder="Name" required />
+          <input type="email" placeholder="Email" required />
+          <input type="text" placeholder="Subject" required />
+          <textarea placeholder="Message" rows="5" required></textarea>
+          <button type="submit" class="button-primary">Send Message</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Demo Modal -->
+    <div class="modal" id="demoModal">
+      <div class="modal-content demo-modal-content">
+        <button class="modal-close" data-modal="demoModal">&times;</button>
+        <h2>Product Demo</h2>
+        <p>Watch Sisyphus agents in action</p>
+        <div class="demo-video-container">
+          <div class="demo-video-placeholder">
+            <svg
+              width="80"
+              height="80"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polygon
+                points="5 3 19 12 5 21 5 3"
+                fill="currentColor"
+                opacity="0.3"
+              />
+            </svg>
+            <p>Demo video would play here</p>
+          </div>
+        </div>
+        <button class="button-primary full-width" id="demoTryNowBtn">
+          Try It Now
+        </button>
+      </div>
+    </div>
+
+    <!-- Success Toast -->
+    <div class="toast" id="successToast">
+      <svg
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
+      <span id="toastMessage">Success!</span>
+    </div>
+
+    <script src="/static/landing.js"></script>
   </body>
 </html>
