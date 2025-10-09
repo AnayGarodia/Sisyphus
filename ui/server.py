@@ -39,7 +39,7 @@ except ImportError as e:
 class CombinedVideoServer:
     """Continuous 60fps video + complete command/terminal tracking."""
 
-    def __init__(self, host="localhost", port=8085, fps=60):
+    def __init__(self, host="0.0.0.0", port=8085, fps=60):  
         self.host = host
         self.port = port
         self.fps = fps
@@ -604,7 +604,7 @@ class CombinedVideoServer:
         
         # Use environment PORT if available (for Render/production)
         actual_port = int(os.environ.get('PORT', self.port))
-        actual_host = os.environ.get('HOST', self.host)
+        actual_host = os.environ.get('HOST', '0.0.0.0')
         
         print(f"🚀 Server running at http://{actual_host}:{actual_port}")
         print(f"🏠 Landing page: http://{actual_host}:{actual_port}/")
@@ -617,7 +617,7 @@ class CombinedVideoServer:
 
 def main():
     parser = argparse.ArgumentParser(description="Run the continuous streaming browser server.")
-    parser.add_argument('--host', default=os.environ.get('HOST', 'localhost'), help='Host to bind to')
+    parser.add_argument('--host', default=os.environ.get('HOST', '0.0.0.0'), help='Host to bind to')  # <-- Changed
     parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8085)), help='Port to bind to')
     parser.add_argument('--fps', type=int, default=60, help='Frames per second for streaming')
     args = parser.parse_args()
