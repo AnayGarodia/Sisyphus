@@ -9,7 +9,6 @@ class SisyphusAgent {
     this.connected = false;
     this.taskRunning = false;
     this.frameCount = 0;
-    this.activeTab = "terminal";
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectTimeout = null;
@@ -27,24 +26,17 @@ class SisyphusAgent {
       stopBtn: document.getElementById("stopBtn"),
       browserDisplay: document.getElementById("browserDisplay"),
       placeholder: document.getElementById("placeholder"),
-      terminal: document.getElementById("terminal"),
       chatMessages: document.getElementById("chatMessages"),
       latencyBadge: document.getElementById("latencyBadge"),
       qualityBadge: document.getElementById("qualityBadge"),
-      commandsPanel: document.getElementById("commandsPanel"),
-      clearBtn: document.getElementById("clearBtn"),
       themeToggle: document.getElementById("themeToggle"),
-      sidebar: document.getElementById("sidebar"),
-      sidebarToggle: document.getElementById("sidebarToggle"),
     };
   }
 
   init() {
     console.log("Initializing Sisyphus Agent...");
     this.setupEventListeners();
-    this.setupTabs();
     this.setupTheme();
-    this.setupSidebar();
     this.setupExampleChips();
     this.connect();
     this.startFPSCounter();
@@ -78,20 +70,11 @@ class SisyphusAgent {
         this.autoResizeTextarea();
       });
     }
-
-    // Clear button
-    if (this.elements.clearBtn) {
-      this.elements.clearBtn.addEventListener("click", () => {
-        this.activeTab === "terminal"
-          ? this.clearTerminal()
-          : this.clearCommands();
-      });
-    }
   }
 
   setupTheme() {
     if (this.elements.themeToggle) {
-      // Load theme from localStorage (safe to use on your own server)
+      // Load theme from localStorage
       const savedTheme = localStorage.getItem("theme");
       if (savedTheme === "dark") {
         document.body.classList.add("dark-theme");
@@ -103,23 +86,6 @@ class SisyphusAgent {
           ? "dark"
           : "light";
         localStorage.setItem("theme", theme);
-      });
-    }
-  }
-
-  setupSidebar() {
-    if (this.elements.sidebarToggle && this.elements.sidebar) {
-      // Load sidebar state
-      const sidebarCollapsed =
-        localStorage.getItem("sidebarCollapsed") === "true";
-      if (sidebarCollapsed) {
-        this.elements.sidebar.classList.add("collapsed");
-      }
-
-      this.elements.sidebarToggle.addEventListener("click", () => {
-        this.elements.sidebar.classList.toggle("collapsed");
-        const collapsed = this.elements.sidebar.classList.contains("collapsed");
-        localStorage.setItem("sidebarCollapsed", collapsed);
       });
     }
   }
@@ -145,28 +111,6 @@ class SisyphusAgent {
     }
   }
 
-  setupTabs() {
-    const tabButtons = document.querySelectorAll(".tab-btn");
-    const tabPanes = document.querySelectorAll(".tab-pane");
-
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const targetTab = button.dataset.tab;
-
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
-        tabPanes.forEach((pane) => pane.classList.remove("active"));
-
-        button.classList.add("active");
-        const targetPane = document.getElementById(`${targetTab}Tab`);
-        if (targetPane) {
-          targetPane.classList.add("active");
-        }
-
-        this.activeTab = targetTab;
-      });
-    });
-  }
-
   connect() {
     // Clear any existing reconnect timeout
     if (this.reconnectTimeout) {
@@ -178,7 +122,6 @@ class SisyphusAgent {
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     this.updateStatus("Connecting...", false);
-    this.log("🔄 Connecting to " + wsUrl, "info");
     console.log("Attempting WebSocket connection to:", wsUrl);
 
     try {
@@ -205,7 +148,6 @@ class SisyphusAgent {
     if (this.elements.sendBtn) {
       this.elements.sendBtn.disabled = false;
     }
-    this.log("✅ Connected to Sisyphus backend", "success");
 
     // Send initialize message
     this.send({
@@ -221,13 +163,11 @@ class SisyphusAgent {
       this.handleMessage(message);
     } catch (error) {
       console.error("Message parsing error:", error);
-      this.log(`❌ Failed to parse message: ${error.message}`, "error");
     }
   }
 
   handleError(error) {
     console.error("WebSocket error:", error);
-    this.log("❌ WebSocket connection error", "error");
   }
 
   handleClose(event) {
@@ -252,11 +192,11 @@ class SisyphusAgent {
         10000
       );
 
-      this.log(
-        `Connection closed (code: ${event.code}). Reconnecting in ${
-          delay / 1000
-        }s... (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
-        "warning"
+      this.addChatMessage(
+        "status",
+        `Connection closed. Reconnecting in ${delay / 1000}s... (Attempt ${
+          this.reconnectAttempts
+        }/${this.maxReconnectAttempts})`
       );
 
       this.reconnectTimeout = setTimeout(() => {
@@ -265,18 +205,18 @@ class SisyphusAgent {
         }
       }, delay);
     } else {
-      this.log(
-        "❌ Maximum reconnection attempts reached. Please refresh the page.",
-        "error"
+      this.addChatMessage(
+        "error",
+        "Maximum reconnection attempts reached. Please refresh the page."
       );
     }
   }
 
   handleConnectionError(error) {
     this.updateStatus("Connection Failed", false);
-    this.log(
-      `❌ Failed to establish connection: ${error.message || error}`,
-      "error"
+    this.addChatMessage(
+      "error",
+      `Failed to establish connection: ${error.message || error}`
     );
   }
 
@@ -286,9 +226,9 @@ class SisyphusAgent {
       task_start: () => this.onTaskStart(message.task),
       task_end: () => this.onTaskEnd(),
       command: () => this.handleCommand(message),
-      terminal: () => this.log(message.content, message.style || "default"),
+      terminal: () => this.handleTerminal(message),
       frame: () => {
-        console.log("📸 Frame received, size:", message.data?.length || 0);
+        console.log("📸 Frame received");
         this.updateFrame(message.data, message.timestamp);
       },
       stream_started: () => this.onStreamStarted(message.fps),
@@ -308,18 +248,27 @@ class SisyphusAgent {
   handleStatus(message) {
     if (message.ready) {
       this.updateStatus(message.message || "Ready", true);
-      this.log(message.message || "✅ Agent ready", "success");
+      this.addChatMessage("agent", message.message || "Agent ready");
     } else {
       this.updateStatus(message.message || "Initializing...", false);
-      this.log(message.message || "⏳ Agent initializing...", "info");
+      this.addChatMessage("status", message.message || "Agent initializing...");
     }
   }
 
   handleCommand(message) {
-    this.addCommand(message);
-    this.log(`[STEP ${message.step}] ${message.command}`, "command");
-    if (message.reasoning) {
-      this.log(`  💭 ${message.reasoning}`, "muted");
+    this.addChatMessage(
+      "agent",
+      `**Step ${message.step}:** ${message.command}\n\n*${
+        message.reasoning || "Executing command..."
+      }*`
+    );
+  }
+
+  handleTerminal(message) {
+    // Display terminal output in chat
+    const content = message.content || "";
+    if (content.trim()) {
+      this.addChatMessage("agent", content);
     }
   }
 
@@ -334,7 +283,6 @@ class SisyphusAgent {
   }
 
   handleErrorMessage(message) {
-    this.log(`❌ ERROR: ${message.message}`, "error");
     this.addChatMessage("error", message.message);
   }
 
@@ -347,7 +295,7 @@ class SisyphusAgent {
         "Cannot send: WebSocket not connected. State:",
         this.ws?.readyState
       );
-      this.log("❌ Cannot send message - not connected", "error");
+      this.addChatMessage("error", "Cannot send message - not connected");
     }
   }
 
@@ -366,12 +314,6 @@ class SisyphusAgent {
 
   updateFrame(dataUrl, timestamp) {
     if (!dataUrl) return;
-
-    // Show the browser section
-    const browserSection = document.getElementById("browserSection");
-    if (browserSection) {
-      browserSection.style.display = "block";
-    }
 
     // Update the image
     if (this.elements.browserDisplay) {
@@ -401,24 +343,17 @@ class SisyphusAgent {
     if (this.elements.placeholder) {
       this.elements.placeholder.style.display = "flex";
     }
-    // Don't hide browserSection itself - keep it visible
   }
 
   onStreamStarted(fps) {
     console.log(`Stream started at ${fps} FPS`);
-    this.log(`✅ Browser stream started at ${fps || 10} FPS`, "success");
-
-    // Show browser section
-    const browserSection = document.getElementById("browserSection");
-    if (browserSection) {
-      browserSection.style.display = "block";
-    }
+    this.addChatMessage("agent", `Browser stream started at ${fps || 60} FPS`);
   }
 
   onStreamStopped() {
     console.log("Stream stopped");
     this.hideBrowserDisplay();
-    this.log("⏸ Stream stopped", "info");
+    this.addChatMessage("status", "Stream stopped");
   }
 
   startFPSCounter() {
@@ -445,8 +380,16 @@ class SisyphusAgent {
       return;
     }
 
+    // Remove welcome container when first task is sent
+    const welcome = this.elements.chatMessages?.querySelector(
+      ".welcome-container"
+    );
+    if (welcome) {
+      welcome.remove();
+    }
+
+    // Add user message to chat
     this.addChatMessage("user", task);
-    this.log(`\n▶ Task: ${task}`, "task");
 
     this.elements.taskInput.value = "";
     this.elements.taskInput.style.height = "auto";
@@ -458,7 +401,7 @@ class SisyphusAgent {
   }
 
   stopTask() {
-    this.log("⏹ Stopping task...", "warning");
+    this.addChatMessage("status", "Stopping task...");
     this.send({
       type: "stop_task",
     });
@@ -477,7 +420,6 @@ class SisyphusAgent {
     }
 
     this.addChatMessage("status", "⚙️ Executing task...");
-    this.log("▶ Task execution started", "info");
   }
 
   onTaskEnd() {
@@ -493,7 +435,6 @@ class SisyphusAgent {
     }
 
     this.addChatMessage("status", "✅ Task completed");
-    this.log("✅ Task completed successfully\n" + "=".repeat(70), "success");
   }
 
   addChatMessage(type, content) {
@@ -507,90 +448,19 @@ class SisyphusAgent {
 
     const msg = document.createElement("div");
     msg.className = `chat-message ${type}`;
-    msg.textContent = content;
+    
+    // Handle markdown-style formatting for bold and italic
+    const formattedContent = content
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/\n/g, "<br>");
+    
+    msg.innerHTML = formattedContent;
 
     container.appendChild(msg);
+    
+    // Smooth scroll to bottom
     container.scrollTop = container.scrollHeight;
-  }
-
-  addCommand(data) {
-    if (!this.elements.commandsPanel) return;
-
-    const emptyState =
-      this.elements.commandsPanel.querySelector(".empty-state");
-    if (emptyState) {
-      emptyState.remove();
-    }
-
-    const commandDiv = document.createElement("div");
-    commandDiv.className = "command-item";
-    commandDiv.innerHTML = `
-      <div class="command-step">STEP ${data.step}</div>
-      <div class="command-text">${this.escapeHtml(data.command)}</div>
-      ${
-        data.reasoning
-          ? `<div class="command-reasoning">${this.escapeHtml(
-              data.reasoning
-            )}</div>`
-          : ""
-      }
-    `;
-
-    this.elements.commandsPanel.appendChild(commandDiv);
-    this.elements.commandsPanel.scrollTop =
-      this.elements.commandsPanel.scrollHeight;
-  }
-
-  log(message, style = "default") {
-    if (!this.elements.terminal) return;
-
-    const line = document.createElement("div");
-    line.className = "terminal-line";
-    line.textContent = message;
-
-    const colors = {
-      success: "#10b981",
-      error: "#ef4444",
-      warning: "#f59e0b",
-      info: "#3b82f6",
-      command: "#34d399",
-      task: "#60a5fa",
-      muted: "#64748b",
-      output: "#94a3b8",
-      default: "#94a3b8",
-    };
-
-    line.style.color = colors[style] || colors.default;
-
-    if (["success", "error", "task"].includes(style)) {
-      line.style.fontWeight = "bold";
-    }
-
-    this.elements.terminal.appendChild(line);
-    this.elements.terminal.scrollTop = this.elements.terminal.scrollHeight;
-  }
-
-  clearTerminal() {
-    if (this.elements.terminal) {
-      this.elements.terminal.innerHTML = `
-        <div class="terminal-line">Sisyphus Agent Terminal v1.0</div>
-        <div class="terminal-line">Ready to execute tasks...</div>
-        <div class="terminal-line terminal-divider">${"=".repeat(70)}</div>
-      `;
-    }
-  }
-
-  clearCommands() {
-    if (this.elements.commandsPanel) {
-      this.elements.commandsPanel.innerHTML = `
-        <div class="empty-state">
-          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M8 6L2 12L8 18M16 6L22 12L16 18"/>
-          </svg>
-          <p>Commands will appear here as the agent executes tasks</p>
-        </div>
-      `;
-    }
   }
 
   escapeHtml(text) {

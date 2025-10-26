@@ -69,178 +69,116 @@
 
     <!-- Main App Container -->
     <main class="app-container">
-      <!-- Main Content Area -->
-      <div class="main-content">
-        <!-- Chat Messages Area -->
-        <div class="chat-area">
-          <div id="chatMessages" class="chat-messages">
-            <div class="welcome-container">
-              <div class="welcome-icon">
-                <svg width="64" height="64">
-                  <circle cx="32" cy="32" r="30" fill="#6366f1" opacity="0.2" />
-                  <circle cx="32" cy="32" r="20" fill="#6366f1" />
-                </svg>
-              </div>
-              <div class="welcome-title">Welcome to Sisyphus!</div>
-              <div class="welcome-subtitle">
-                Ask questions or give instructions. Your agent is standing by.
-              </div>
-              <div class="example-tasks">
-                <div class="examples-label">Try:</div>
-                <div class="example-chip">Summarize this research paper</div>
-                <div class="example-chip">Find my latest emails</div>
-                <div class="example-chip">Create a study plan for finals</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Browser Panel -->
-          <div
-            class="browser-section"
-            id="browserSection"
+      <!-- Left Side - Browser Output (No Header) -->
+      <div class="browser-container">
+        <div class="browser-viewport">
+          <img
+            id="browserDisplay"
+            class="browser-frame"
             style="display: none"
-          >
-            <div class="browser-header">
-              <span class="browser-title">Browser Output</span>
-              <div class="browser-stats">
-                <span class="stat-badge quality-badge" id="qualityBadge"
-                  >HD</span
-                >
-                <span class="stat-badge latency-badge" id="latencyBadge"
-                  >0ms</span
-                >
-              </div>
-            </div>
-            <div class="browser-viewport">
-              <img
-                id="browserDisplay"
-                class="browser-frame"
-                style="display: none"
-                alt="Browser viewport"
+            alt="Browser viewport"
+          />
+          <div id="placeholder" class="browser-placeholder">
+            <svg width="64" height="64">
+              <rect
+                x="8"
+                y="16"
+                width="48"
+                height="32"
+                rx="4"
+                fill="currentColor"
+                opacity="0.2"
               />
-              <div id="placeholder" class="browser-placeholder">
-                <svg width="64" height="64">
-                  <rect
-                    x="8"
-                    y="16"
-                    width="48"
-                    height="32"
-                    rx="4"
-                    fill="currentColor"
-                    opacity="0.2"
-                  />
-                </svg>
-                <h3>No browser output yet</h3>
-                <p>Run a browser automation task!</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat Input (Bottom) -->
-        <div class="chat-input-container">
-          <div class="input-wrapper">
-            <textarea
-              id="taskInput"
-              class="task-input"
-              placeholder="Message Sisyphus..."
-              rows="1"
-            ></textarea>
-            <button id="sendBtn" class="action-btn send-btn">
-              <svg
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-            </button>
-            <button
-              id="stopBtn"
-              class="action-btn stop-btn"
-              style="display: none"
-            >
-              <svg width="20" height="20" fill="currentColor">
-                <rect x="6" y="6" width="8" height="8" />
-              </svg>
-            </button>
+            </svg>
+            <h3>No browser output yet</h3>
+            <p>Run a browser automation task!</p>
           </div>
         </div>
       </div>
 
-      <!-- Expandable Sidebar -->
-      <aside class="sidebar" id="sidebar">
-        <button class="sidebar-toggle" id="sidebarToggle">
-          <svg
-            width="20"
-            height="20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
-
-        <div class="sidebar-content">
-          <div class="tabs-header">
-            <button class="tab-btn active" data-tab="terminal">
-              <svg
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M4 17l6-6-6-6M12 19h8" />
-              </svg>
-              Terminal
-            </button>
-            <button class="tab-btn" data-tab="commands">
-              <svg
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M9 3h6v6M15 3l-6 6M9 15H3V9M3 15l6-6" />
-              </svg>
-              Commands
-            </button>
-          </div>
-
-          <div class="tabs-content">
-            <div id="terminalTab" class="tab-pane active">
-              <div class="tab-header">
-                <span class="tab-title">Terminal Output</span>
-                <button id="clearTerminal" class="clear-btn">Clear</button>
-              </div>
-              <div id="terminal" class="terminal"></div>
-            </div>
-
-            <div id="commandsTab" class="tab-pane">
-              <div class="tab-header">
-                <span class="tab-title">Command History</span>
-                <button id="clearCommands" class="clear-btn">Clear</button>
-              </div>
-              <div id="commandsPanel" class="commands-list">
-                <div class="empty-state">
+      <!-- Right Side - Chat Interface -->
+      <aside class="chat-sidebar">
+        <div class="chat-sidebar-content">
+          <!-- Chat Messages Area -->
+          <div class="chat-area">
+            <div id="chatMessages" class="chat-messages">
+              <div class="welcome-container">
+                <div class="welcome-icon">
                   <svg width="48" height="48">
-                    <ellipse
-                      cx="24"
-                      cy="24"
-                      rx="20"
-                      ry="16"
-                      fill="currentColor"
-                      opacity="0.2"
-                    />
+                    <circle cx="24" cy="24" r="22" fill="#6366f1" opacity="0.2" />
+                    <circle cx="24" cy="24" r="14" fill="#6366f1" />
                   </svg>
-                  <p>No commands yet</p>
+                </div>
+                <div class="welcome-title">Welcome to Sisyphus!</div>
+                <div class="welcome-subtitle">
+                  Ask questions or give instructions. Your agent is standing by.
+                </div>
+                <div class="example-tasks">
+                  <div class="examples-label">Try:</div>
+                  <div class="example-chip">Search for latest AI news</div>
+                  <div class="example-chip">Find information on quantum computing</div>
+                  <div class="example-chip">Navigate to Wikipedia</div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Chat Input (Bottom of Sidebar) -->
+          <div class="chat-input-container">
+            <div class="input-wrapper">
+              <button class="input-addon-btn" aria-label="Add attachment">
+                <svg
+                  width="24"
+                  height="24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <textarea
+                id="taskInput"
+                class="task-input"
+                placeholder="Ask anything"
+                rows="1"
+              ></textarea>
+              <button class="input-addon-btn" aria-label="Voice input">
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
+                </svg>
+              </button>
+              <button id="sendBtn" class="action-btn send-btn">
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+              <button
+                id="stopBtn"
+                class="action-btn stop-btn"
+                style="display: none"
+              >
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
