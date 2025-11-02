@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import logging
 import shlex
 import sys
+import os
 
 console = Console()
 
@@ -74,6 +75,7 @@ class BaseBrowserAgent:
         self.playwright = None
         self.browser = None
         self.context = None
+
         self.page = None
         self._is_healthy = False
         
@@ -165,7 +167,7 @@ class BaseBrowserAgent:
     
     # ==================== Element Resolution ====================
     
-    def get_element(self, selector):
+    def _get_element(self, selector):
         """
         Resolve element by index, label, or CSS selector.
         PUBLIC method (not private).

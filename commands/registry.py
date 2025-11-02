@@ -92,13 +92,6 @@ COMMAND_SPECS = [
         description='Show navigation history',
         category='Navigation'
     ),
-    CommandSpec(
-        name='wait_load',
-        method_name='wait_for_load',
-        syntax='wait_load [ms]',
-        description='Wait for page to load',
-        category='Navigation'
-    ),
     
     # Interaction
     CommandSpec(
@@ -181,13 +174,6 @@ COMMAND_SPECS = [
         description='Scan page (filter: buttons, inputs, links, etc.)',
         category='Scanning'
     ),
-    CommandSpec(
-        name='info',
-        method_name='get_element_info',
-        syntax='info <N>',
-        description='Show details for element #N',
-        category='Scanning'
-    ),
     
     # System
     CommandSpec(
@@ -232,6 +218,20 @@ COMMAND_SPECS = [
         description='List all open tabs.',
         category='Navigation'
     ),
+    CommandSpec(
+        name='screenshot',
+        method_name='screenshot',
+        syntax='screenshot [filename]',
+        description='Take full page screenshot',
+        category='Information'
+    ),
+    CommandSpec(
+        name='read_page',
+        method_name='read_page',
+        syntax='read_page [focus]',
+        description='Extract page content (overview/content/forms/navigation/all)',
+        category='Information'
+    ),
 
 ]
 
@@ -254,7 +254,11 @@ def build_command_registry(agent) -> Dict[str, Callable]:
     
     for spec in COMMAND_SPECS:
         # Get the method from agent
-        method = getattr(agent, spec.method_name)
+        try:
+            method = getattr(agent, spec.method_name)
+        except AttributeError:
+            # Skip if method doesn't exist (e.g., visual_scan without API key)
+            continue
         
         # Handle special cases (like uncheck)
         if spec.name == 'uncheck':

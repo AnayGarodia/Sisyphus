@@ -63,7 +63,7 @@ def run_experimental_repl(agent: ExperimentalAgent):
     # Add experimental commands
     commands['wiki_test'] = agent.wiki_test  # Add this line
     
-    console.print("\n[bold magenta]🧪 Experimental Workspace[/bold magenta]")
+    console.print("\n[bold magenta] Experimental Workspace[/bold magenta]")
     console.print("[yellow]Extra commands: wiki_test[/yellow]")
     console.print("[dim]Type 'help' for standard commands, 'exit' to quit[/dim]\n")
     

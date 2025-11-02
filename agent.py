@@ -2,6 +2,7 @@
 """
 Single-step LLM browser agent with intelligent execution and context awareness.
 Executes ONE command at a time with full observability.
+OPTIMIZED: Reduced redundant calls, shorter prompts, smarter navigation handling.
 """
 
 import os
@@ -75,7 +76,7 @@ class LLMBrowserAgent:
     """
     
     MAX_CONVERSATION_MESSAGES = 10
-    DEFAULT_MODEL = "llama-3.1-8b-instant"
+    DEFAULT_MODEL = "openai/gpt-oss-120b"
     DEFAULT_MAX_STEPS = 25
     MAX_CONSECUTIVE_FAILURES = 3
     
@@ -116,150 +117,64 @@ class LLMBrowserAgent:
         
     
     def _build_system_prompt(self) -> str:
-        """Build comprehensive system prompt for intelligent execution."""
-        
-        # Import inside the method
+        """Build concise system prompt for intelligent execution."""
         from commands.registry import get_system_prompt_commands
-        
-        # Generate the commands section HERE
         commands_section = get_system_prompt_commands()
         
-        return f"""You are an autonomous browser agent that executes ONE command at a time.
+        return f"""You are a browser automation agent. Execute ONE command per response.
 
-    CRITICAL EFFICIENCY RULE:
-    After ANY navigation (go, press Enter, clicking links), immediately check if the task is complete.
-    Don't waste steps scanning or checking - if the page title/URL matches the goal, use FINISH: immediately.
+    RESPONSE FORMAT (required):
+    THINKING: <brief analysis>
+    ACTION: <command>
 
-    Example:
-    Task: Search YouTube for "cats"
-    After press Enter → Page shows "cats - YouTube" → IMMEDIATELY use FINISH:
-    DO NOT: scan inputs, check url, or do anything else first!
+    When task complete:
+    THINKING: <brief explanation>
+    FINISH: <summary>
 
-    RESPONSE FORMAT (use this exact format every time):
+    AVAILABLE COMMANDS:
 
-    THINKING: <one sentence analyzing what to do next>
-    ACTION: <exact command with arguments>
+    Navigation:
+    - go <url>- Navigate to URL
+    - back / forward / refresh  - Browser navigation
+    - new_tab <url>- Open new tab
+    - switch_tab <N>- Switch to tab N
+    - close_tab- Close current tab
 
-    OR when task is 100% complete:
+    Understanding:
+    - read_page [focus] - Extract text (focus=overview/content/forms/navigation/all)
+    - scan [type] - Find elements (type=buttons/inputs/links/all)
+    - screenshot [name] - Capture screenshot
 
-    THINKING: <brief explanation of what was accomplished>
-    FINISH: <summary of completion>
+    Interaction:
+    - click <N>  - Click element N
+    - type <N> "text" - Type into element N
+    - press <key>- Press key (Enter, Tab, Escape, ArrowDown, etc.)
+    - hover <N>- Hover over element N
+    - check/uncheck <N>- Toggle checkbox N
+    - scroll_to <N>- Scroll to element N
 
-    CRITICAL: NEVER write "ACTION: DONE" or "COMMAND: DONE". Use "FINISH:" on its own line to signal completion.
+    Info:
+    - url / title              - Show current page info
 
-    {commands_section}
+    DONT EXECUTE: read_page [focus], scan [type] EXECUTE IN THIS FORMAT: read_page overview or scan buttons etc.
 
-    UNDERSTANDING COMMANDS:
-    The commands listed above are YOUR direct commands to control the browser.
-    - These are NOT webpage elements or buttons you need to find
-    - Execute them directly as shown in the syntax
-    - DO NOT search for these commands as clickable elements on webpages
-    - DO NOT use keyboard shortcuts (like Ctrl+T, Ctrl+W) - use the provided commands instead
+    CORE PRINCIPLES:
 
-    Examples:
-    - To open a new tab: Use "new_tab" command (NOT Ctrl+T, NOT looking for a button)
-    - To navigate: Use "go <url>" command (direct browser action)
-    - To click webpage elements: First "scan", then "click N" where N is from scan results
-
-    COMMAND OUTPUT:
-    - After each command, you receive execution result (SUCCESS or FAILED)
-    - SUCCESS: Command worked, output shows what happened
-    - FAILED: Error message with recovery suggestions
-    - CURRENT PAGE STATE: Always shows current page title and URL
-
-    CRITICAL RULES:
-
-    1. Distinguish between BROWSER COMMANDS and WEBPAGE ELEMENTS:
-    - Browser commands (from the list above): Execute directly, no scan needed
-    - Webpage elements (buttons, links, inputs): Must scan first, then use click/type
-    - If the task mentions browser-level actions (tabs, navigation), use browser commands
-    - If the task mentions page content (buttons, forms), scan and interact with elements
-
-    2. Element IDs from scan are ONLY valid until page navigates
-    - If you use "go", "back", "forward", or press Enter (causing navigation)
-    - ALL previous element IDs become INVALID
-    - You MUST run scan again before using click/type
-
-    3. Before using click, type, hover, etc., you MUST have scanned first
-    - Cannot use element ID without scanning
-    - Error "Element N not found" means you need to scan
-
-    4. Arguments are strict:
-    - Element commands need integer: click 5 (not click "5")
-    - Type command needs quotes: type 5 "text here"
-    - Go command needs full URL: go https://example.com
-    - Read the command syntax carefully in the commands list above
-
-    5. Efficiency:
-    - Use direct URLs when you know them (go https://twitter.com)
-    - Don't scan unless you need to interact with elements
-    - Don't check title/url unless specifically asked
-    - Trust success messages - move forward
-
-    6. Task completion:
-    - Check CURRENT PAGE STATE after each action
-    - If it matches task goal → use FINISH:
-    - Don't over-verify - if page loaded successfully, task may be done
-
-    ERROR RECOVERY:
-    - "Element N not found" → Run: scan inputs (or scan buttons)
-    - "Click intercepted" / "overlay" → Run: press Escape, then retry
-    - "Cannot type into button" → Run: scan inputs (to find actual input fields)
-    - "Page changed" / "invalid IDs" → Run: scan (to get fresh element IDs)
-    - "Timeout" → Run: wait_load, then retry
-    - "Command not found" → Check the commands list above for correct syntax
-
-    EXAMPLES:
-
-    Task: Open GitHub
-    THINKING: I'll navigate directly to GitHub's website.
-    ACTION: go https://github.com
-
-    [After seeing: SUCCESS - Page loaded: GitHub]
-    THINKING: Successfully navigated to GitHub homepage, task complete.
-    FINISH: GitHub homepage is now open and loaded.
-
-    ---
-
-    Task: Open a new tab at YouTube
-    THINKING: I'll use the new_tab command with YouTube's URL.
-    ACTION: new_tab https://youtube.com
-
-    [After seeing: SUCCESS - New tab opened at YouTube]
-    THINKING: Successfully opened new tab with YouTube loaded, task complete.
-    FINISH: New tab opened at YouTube.
-
-    ---
-
-    Task: Search Google for "python tutorials"
-    THINKING: Navigate to Google first.
-    ACTION: go https://google.com
-
-    [After seeing: SUCCESS - Page loaded: Google]
-    THINKING: Need to find the search box to enter query.
-    ACTION: scan inputs
-
-    [After seeing: [5] Search input field]
-    THINKING: Search box is element 5, I'll type the query.
-    ACTION: type 5 "python tutorials"
-
-    [After seeing: SUCCESS]
-    THINKING: Query entered, now submit with Enter.
-    ACTION: press Enter
-
-    [After seeing: SUCCESS - Page navigated to search results]
-    THINKING: Search results are displayed, task is complete.
-    FINISH: Successfully searched Google for "python tutorials" and results are now displayed.
-
-    Remember: 
-    - Commands from the list above are direct browser actions
-    - Webpage elements must be scanned first before interaction
-    - Be decisive, trust successful executions, and use FINISH when complete"""
+    ACT EFFICIENTLY
+    - Only use read_page when you need to READ content (articles, results, instructions, unfamiliar pages)
+    - Use scan to find buttons/inputs before clicking/typing. 
+    - Remember to rescan when the page changes.
+    - You need to press Enter after typing anything. Type does NOT auto-submit forms.
+    - Use the most direct command to achieve/reach closer to your goal. Do not use unnecessary commands. 
+    - Avoid using very specific urls in go. Use common urls (google.com, amazon.com) or given ones.
+    - Only FINISH: when full objective accomplished
+    - FINISH is not a command! NEVER WRITE Command: FINISH! ALWAYS use FINISH:"""
+        
         
     def _get_page_context(self) -> Tuple[Optional[str], Optional[str]]:
         """Get current page title and URL safely."""
         try:
-            title = self.browser.page.title or "No title"
+            title = self.browser.page.title() or "No title"
             url = self.browser.page.url
             return title, url
         except Exception:
@@ -374,38 +289,36 @@ class LLMBrowserAgent:
     
     def _execute_command(self, command_str: str) -> ExecutionResult:
         """Execute single command with comprehensive result tracking."""
-        # Validate first
+        # Validate first (no context needed for validation)
         is_valid, error_msg = self._validate_command(command_str)
         if not is_valid:
-            title, url = self._get_page_context()
             return ExecutionResult(
                 success=False,
                 output=error_msg,
                 command=command_str,
                 page_changed=False,
                 error_type=ErrorType.VALIDATION,
-                page_title=title,
-                page_url=url
+                page_title=None,
+                page_url=None
             )
         
         try:
             parts = self.browser._parse_command_line(command_str)
         except Exception as e:
-            title, url = self._get_page_context()
             return ExecutionResult(
                 success=False,
                 output=f"Parse error: {str(e)}",
                 command=command_str,
                 page_changed=False,
                 error_type=ErrorType.VALIDATION,
-                page_title=title,
-                page_url=url
+                page_title=None,
+                page_url=None
             )
         
         cmd = parts[0].lower()
         args = parts[1:]
         
-        # Capture state before execution
+        # Capture URL before execution (for change detection only)
         try:
             url_before = self.browser.page.url
         except Exception:
@@ -413,41 +326,23 @@ class LLMBrowserAgent:
         
         # Execute command
         try:
+            # Special handling for scan command
             if cmd == 'scan':
                 self.commands[cmd](*args)
                 output = self._format_scan_results()
-                title, url = self._get_page_context()
                 return ExecutionResult(
                     success=True,
                     output=output,
                     command=command_str,
                     page_changed=False,
-                    page_title=title,
-                    page_url=url
+                    page_title=None,
+                    page_url=None
                 )
             
-            elif cmd == 'go':
-                url_arg = args[0] if args else ''
-                self.commands[cmd](*args)
-                
-                title, url_after = self._get_page_context()
-                changed = url_after != url_before if url_before else True
-                
-                output = f"Successfully navigated to {url_arg}"
-                if title:
-                    output += f"\nPage loaded: {title}"
-                
-                return ExecutionResult(
-                    success=True,
-                    output=output,
-                    command=command_str,
-                    page_changed=changed,
-                    page_title=title,
-                    page_url=url_after
-                )
-            
+            # Special handling for title command
             elif cmd == 'title':
-                title, url = self._get_page_context()
+                title = self.browser.page.title()
+                url = self.browser.page.url
                 return ExecutionResult(
                     success=True,
                     output=f"Page title: {title}",
@@ -457,58 +352,114 @@ class LLMBrowserAgent:
                     page_url=url
                 )
             
+            # Special handling for url command
             elif cmd == 'url':
-                title, url = self._get_page_context()
+                url = self.browser.page.url
                 return ExecutionResult(
                     success=True,
                     output=f"Current URL: {url}",
+                    command=command_str,
+                    page_changed=False,
+                    page_title=None,
+                    page_url=url
+                )
+            
+            elif cmd == 'read_page':
+                focus = args[0] if args else 'overview'
+                # Set aggressive limit based on focus type
+                if focus == 'overview':
+                    max_chars = 800  # Very short for overview
+                elif focus in ['forms', 'navigation']:
+                    max_chars = 600  # These are typically short
+                else:
+                    max_chars = 1200  # content/all - slightly more room
+                
+                extracted_text = self.commands[cmd](focus, save=False, max_chars=max_chars)
+                
+                # Get context once
+                title = self.browser.page.title()
+                url = self.browser.page.url
+                
+                return ExecutionResult(
+                    success=True,
+                    output=f"Page content extracted ({len(extracted_text)} chars)\n\n{extracted_text}",
                     command=command_str,
                     page_changed=False,
                     page_title=title,
                     page_url=url
                 )
             
+            # Special handling for screenshot command
+            elif cmd == 'screenshot':
+                filename = args[0] if args else None
+                success = self.commands[cmd](filename)
+                
+                if success:
+                    output = "Screenshot captured successfully"
+                    if filename:
+                        output += f": {filename}"
+                else:
+                    output = "Screenshot failed"
+                
+                return ExecutionResult(
+                    success=success,
+                    output=output,
+                    command=command_str,
+                    page_changed=False,
+                    page_title=None,
+                    page_url=None
+                )
+            
+            # Execute all other commands
             else:
-                # Execute command
                 self.commands[cmd](*args)
                 
-                # Check for page changes
-                page_changed = False
-                url_after = url_before
+                # Determine if this is a navigation command
+                navigation_commands = ['go', 'back', 'forward']
+                is_navigation = cmd in navigation_commands or (
+                    cmd == 'press' and args and args[0].lower() == 'enter'
+                )
                 
+                page_changed = False
+                
+                # Smart wait for navigation commands
+                if is_navigation:
+                    try:
+                        # Wait for navigation to complete
+                        self.browser.page.wait_for_load_state('domcontentloaded', timeout=2000)
+                    except Exception:
+                        # Timeout is OK - page might not navigate
+                        pass
+                
+                # Check if URL actually changed
                 try:
                     url_after = self.browser.page.url
                     page_changed = (url_after != url_before)
                 except Exception:
                     page_changed = False
                 
-                # Special handling for Enter key - give page time to navigate
-                if cmd == 'press' and args and args[0].lower() == 'enter':
-                    try:
-                        # Wait for navigation to start and complete
-                        self.browser.page.wait_for_load_state('domcontentloaded', timeout=5000)
-                        url_after_wait = self.browser.page.url
-                        if url_after_wait != url_before:
-                            page_changed = True
-                            url_after = url_after_wait
-                            title, url_current = self._get_page_context()
-                    except Exception:
-                        # Navigation might not happen (e.g., just typing in a field)
-                        pass
-                    
-                title, url_current = self._get_page_context()
-                
-                # Build output message
-                output = f"✓ Command '{cmd}' executed successfully"
-                
+                # Only get page context if page actually changed
                 if page_changed:
-                    output += f"\n\n⚠️  PAGE NAVIGATION DETECTED:"
-                    output += f"\n  Previous URL: {url_before}"
-                    output += f"\n  Current URL: {url_current}"
-                    if title:
-                        output += f"\n  New page title: {title}"
-                    output += "\n\n🔄 IMPORTANT: All previous element IDs are now INVALID"
-                    output += "\n   You MUST run 'scan' again before using click/type commands"
+                    try:
+                        title = self.browser.page.title()
+                        url = url_after
+                    except Exception:
+                        title = "Unknown"
+                        url = url_after or "Unknown"
+                    
+                    # Clear element map on page change
+                    if hasattr(self.browser, "element_map"):
+                        self.browser.element_map.clear()
+                    
+                    output = f"Command '{cmd}' executed successfully"
+                    output += f"\n\nPAGE CHANGED - Previous element IDs are now invalid"
+                    output += f"\nNew page: {title}"
+                    output += f"\nURL: {url}"
+                else:
+                    # Fast path - no context needed
+                    title = None
+                    url = None
+                    output = f"Command '{cmd}' executed successfully"
                 
                 return ExecutionResult(
                     success=True,
@@ -516,7 +467,7 @@ class LLMBrowserAgent:
                     command=command_str,
                     page_changed=page_changed,
                     page_title=title,
-                    page_url=url_current
+                    page_url=url
                 )
         
         except Exception as e:
@@ -535,18 +486,24 @@ class LLMBrowserAgent:
             if len(error_msg) > 200:
                 error_msg = error_msg[:200] + "..."
             
-            title, url = self._get_page_context()
+            # Get context on error (helpful for debugging)
+            try:
+                title = self.browser.page.title()
+                url = self.browser.page.url
+            except:
+                title = None
+                url = None
             
             return ExecutionResult(
                 success=False,
-                output=f"❌ Error: {error_msg}",
+                output=f"Error: {error_msg}",
                 command=command_str,
                 page_changed=False,
                 error_type=error_type,
                 page_title=title,
                 page_url=url
             )
-    
+        
     def _format_scan_results(self) -> str:
         """Format scan results with clear structure."""
         if not self.browser.element_map:
@@ -563,13 +520,13 @@ class LLMBrowserAgent:
             by_type[elem_type].append((idx, label))
         
         lines = []
-        lines.append(f"✓ SCAN COMPLETE - Found {len(self.browser.element_map)} interactive elements")
+        lines.append(f" SCAN COMPLETE - Found {len(self.browser.element_map)} interactive elements")
         
         # Show inputs and textareas first (most commonly needed)
         for elem_type in ['input', 'textarea', 'button', 'link']:
             if elem_type in by_type:
                 items = by_type[elem_type]
-                lines.append(f"\n📋 {elem_type.upper()}S ({len(items)}):")
+                lines.append(f"\n {elem_type.upper()}S ({len(items)}):")
                 for idx, label in items[:15]:
                     lines.append(f"  [{idx}] {label}")
                 if len(items) > 15:
@@ -579,12 +536,12 @@ class LLMBrowserAgent:
         other_types = [t for t in by_type.keys() 
                       if t not in ['input', 'textarea', 'button', 'link']]
         if other_types:
-            lines.append(f"\n📦 OTHER ELEMENTS:")
+            lines.append(f"\n OTHER ELEMENTS:")
             for t in other_types:
                 count = len(by_type[t])
-                lines.append(f"  • {count} {t}(s)")
+                lines.append(f"{count} {t}(s)")
 
-        lines.append("💡 Use these element IDs with: click N, type N \"text\", hover N, etc.")
+        lines.append(" Use these element IDs with: click N, type N \"text\", hover N, etc.")
         
         return "\n".join(lines)
     
@@ -624,17 +581,37 @@ class LLMBrowserAgent:
             "content": user_message
         })
         
+        # Truncate old messages AGGRESSIVELY to keep context small
+        history = []
+        for msg in self.conversation_history[-self.MAX_CONVERSATION_MESSAGES:]:
+            content = msg["content"]
+            
+            # Very aggressive truncation
+            if msg["role"] == "assistant":
+                # Assistant messages are usually short, keep them at 150
+                if len(content) > 150:
+                    content = content[:150] + "..."
+            else:
+                # User messages (feedback) - truncate heavily
+                if len(content) > 500:
+                    content = content[:500] + "...[msg truncated]"
+            
+            history.append({
+                "role": msg["role"],
+                "content": content
+            })
+        
         messages = [
             {"role": "system", "content": self.system_prompt},
-            *self.conversation_history[-self.MAX_CONVERSATION_MESSAGES:]
+            *history
         ]
         
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.3,
-                max_tokens=300
+                temperature=0,
+                max_tokens=150  # Increased from 50 to give room for THINKING + ACTION
             )
             
             assistant_message = response.choices[0].message.content.strip()
@@ -651,38 +628,51 @@ class LLMBrowserAgent:
     
     def _build_feedback(self, result: ExecutionResult, task: str) -> str:
         """Build minimal feedback message for LLM."""
-        lines = []
-        
-        # Status and output (compact)
         if result.success:
-            lines.append(f"✓ SUCCESS: {result.output}")
+            output = result.output
+            
+            # Truncate aggressively
+            if result.command.startswith('read_page'):
+                if len(output) > 500:
+                    output = output[:500] + "\n\n...[truncated for token limit]"
+            elif len(output) > 350:
+                output = output[:350] + "..."
+            
+            feedback = f"SUCCESS: {output}"
+            
+            # Detect stuck scan loops
+            if result.command.startswith('scan') and "No interactive elements" in output:
+                if hasattr(self, 'consecutive_scan_failures'):
+                    self.consecutive_scan_failures += 1
+                    if self.consecutive_scan_failures >= 2:
+                        feedback += "\n\nNo elements found after multiple scans. Try: read_page OR press keys directly"
+                else:
+                    feedback += "\n\nNo elements found. Try different approach"
+            
+            if result.page_changed and result.page_title:
+                feedback += f"\n\nPage changed: {result.page_title}"
+            
+            # Hint for type commands
+            if result.command.startswith('type ') and not result.page_changed:
+                feedback += "\n\nHINT: Text entered. Press Enter to submit"
+            
+            # CHANGED: Only ask about completion, don't prompt it every time
+            feedback += f"\n\nTask objective: {task}"
+            feedback += "\nIs task objective fully achieved? If yes, use FINISH:"
+            
         else:
-            lines.append(f"✗ FAILED: {result.output}")
+            feedback = f"FAILED: {result.output}"
+            if self.consecutive_failures >= 2:
+                feedback += f"\n\nTry different approach"
         
-        # Current page state (always critical)
-        if result.page_title and result.page_url:
-            lines.append(f"\nPage: {result.page_title}")
-            lines.append(f"URL: {result.page_url}")
+        return feedback
         
-        # Only show task reminder every few steps or on failure
-        if not result.success or self.step_count % 3 == 0:
-            lines.append(f"\nTask: {task}")
-        
-        # Consecutive failure warning (only when critical)
-        if self.consecutive_failures >= 2:
-            lines.append(f"\n⚠️ {self.consecutive_failures} failures - try different approach")
-        
-        return "\n".join(lines)
-        
-    
     def execute_task(self, task: str, max_steps: int = None):
         """Execute task with intelligent single-step execution."""
         if max_steps is None:
             max_steps = self.DEFAULT_MAX_STEPS
         
-        console.print(f"\n[bold cyan]{'═' * 70}[/bold cyan]")
-        console.print(f"[bold cyan]🚀 TASK: {task}[/bold cyan]")
-        console.print(f"[bold cyan]{'═' * 70}[/bold cyan]")
+        console.print(f"[bold cyan] TASK: {task}[/bold cyan]")
         console.print(f"[dim]Model: {self.model} | Max steps: {max_steps}[/dim]\n")
         
         self.step_count = 0
@@ -691,7 +681,7 @@ class LLMBrowserAgent:
         # Get initial command
         try:
             initial_prompt = (
-                f"🎯 TASK: {task}\n\n"
+                f" TASK: {task}\n\n"
                 f"Analyze this task and provide your FIRST action.\n"
                 f"Remember to respond with:\n"
                 f"THINKING: <your analysis>\n"
@@ -699,7 +689,7 @@ class LLMBrowserAgent:
             )
             llm_response = self._call_llm(initial_prompt)
         except Exception as e:
-            console.print(f"[bold red]❌ LLM Error:[/bold red] {e}")
+            console.print(f"[bold red] LLM Error:[/bold red] {e}")
             return
         
         # Main execution loop
@@ -711,12 +701,12 @@ class LLMBrowserAgent:
             
             # Handle parse errors
             if 'error' in parsed:
-                console.print(f"[red]⚠️  Parse Error:[/red] {parsed['error']}")
+                console.print(f"[red]ï¸  Parse Error:[/red] {parsed['error']}")
                 console.print(f"[dim]Raw response: {llm_response[:200]}...[/dim]\n")
                 
                 try:
                     llm_response = self._call_llm(
-                        f"❌ Your response format was invalid: {parsed['error']}\n\n"
+                        f" Your response format was invalid: {parsed['error']}\n\n"
                         "Please respond using the EXACT format:\n\n"
                         "THINKING: <one sentence>\n"
                         "ACTION: <single command>\n\n"
@@ -726,7 +716,7 @@ class LLMBrowserAgent:
                         "DO NOT write 'ACTION: DONE' - use 'FINISH:' instead!"
                     )
                 except Exception as e:
-                    console.print(f"[red]❌ LLM Error:[/red] {e}")
+                    console.print(f"[red] LLM Error:[/red] {e}")
                     break
                 continue
             
@@ -735,22 +725,20 @@ class LLMBrowserAgent:
                 thinking = parsed.get('thinking', 'No analysis provided')
                 finish_msg = parsed.get('finish_message', 'Task completed')
                 
-                console.print(f"\n[bold green]{'═' * 70}[/bold green]")
-                console.print(f"[bold green]✅ TASK COMPLETED[/bold green]")
-                console.print(f"[bold green]{'═' * 70}[/bold green]")
+                console.print(f"[bold green] TASK COMPLETED[/bold green]")
                 
                 if thinking:
-                    console.print(f"\n[white]💭 Analysis: {thinking}[/white]")
-                console.print(f"[white]🎉 Result: {finish_msg}[/white]\n")
+                    console.print(f"\n[white] Analysis: {thinking}[/white]")
+                console.print(f"[white] Result: {finish_msg}[/white]\n")
                 
-                console.print(f"[bold cyan]📈 Summary:[/bold cyan]")
-                console.print(f"  • Steps taken: {self.step_count}")
-                console.print(f"  • API calls: {self.api_calls_made}")
+                console.print(f"[bold cyan] Summary:[/bold cyan]")
+                console.print(f"Steps taken: {self.step_count}")
+                console.print(f"API calls: {self.api_calls_made}")
                 
                 title, url = self._get_page_context()
                 if title and url:
-                    console.print(f"  • Final page: {title}")
-                    console.print(f"  • Final URL: {url}")
+                    console.print(f"Final page: {title}")
+                    console.print(f"Final URL: {url}")
                 
                 console.print()
                 return
@@ -759,19 +747,19 @@ class LLMBrowserAgent:
             command = parsed['command']
             thinking = parsed.get('thinking', 'No analysis provided')
             
-            console.print(f"[bold yellow]━━━ Step {self.step_count} ━━━[/bold yellow]")
+            console.print(f"[bold yellow]Step {self.step_count}[/bold yellow]")
             if thinking:
-                console.print(f"[dim]💭 {thinking}[/dim]")
-            console.print(f"[cyan]⚡ ACTION: {command}[/cyan]")
+                console.print(f"[dim] {thinking}[/dim]")
+            console.print(f"[cyan] ACTION: {command}[/cyan]")
             
             result = self._execute_command(command)
             
             # Display result
             if result.success:
-                console.print(f"[green]✓ SUCCESS[/green]")
+                console.print(f"[green] SUCCESS[/green]")
                 self.consecutive_failures = 0
             else:
-                console.print(f"[red]✗ FAILED[/red]")
+                console.print(f"[red] FAILED[/red]")
                 self.consecutive_failures += 1
             
             # Show output (truncated for display)
@@ -791,22 +779,18 @@ class LLMBrowserAgent:
             try:
                 llm_response = self._call_llm(feedback)
             except Exception as e:
-                console.print(f"[red]❌ LLM Error:[/red] {e}")
+                console.print(f"[red] LLM Error:[/red] {e}")
                 break
         
         # Max steps reached
         if self.step_count >= max_steps:
-            console.print(f"[yellow]{'═' * 70}[/yellow]")
-            console.print(f"[yellow]⚠️  Maximum steps reached ({max_steps})[/yellow]")
-            console.print(f"[yellow]{'═' * 70}[/yellow]")
-            console.print(f"\n[dim]📍 Final state: {self._build_context_summary()}[/dim]")
-            console.print(f"[dim]📊 API calls made: {self.api_calls_made}[/dim]\n")
+            console.print(f"[yellow]ï¸  Maximum steps reached ({max_steps})[/yellow]")
+            console.print(f"\n[dim] Final state: {self._build_context_summary()}[/dim]")
+            console.print(f"[dim] API calls made: {self.api_calls_made}[/dim]\n")
     
     def interactive_mode(self):
         """Interactive mode for continuous task execution."""
-        console.print("\n[bold green]{'═' * 70}[/bold green]")
-        console.print("[bold green]    🤖 INTELLIGENT BROWSER AGENT v2.0      [/bold green]")
-        console.print("[bold green]{'═' * 70}[/bold green]")
+        console.print("[bold green]     INTELLIGENT BROWSER AGENT v2.0      [/bold green]")
         console.print(f"[dim]Model: {self.model}[/dim]")
         console.print(f"[dim]Mode: Single-step execution with full observability[/dim]")
         console.print(f"[dim]Commands: 'quit' to exit | 'reset' to restart browser[/dim]\n")
@@ -814,7 +798,7 @@ class LLMBrowserAgent:
         try:
             while True:
                 try:
-                    task = console.input("[bold blue]🎯 Task> [/bold blue]").strip()
+                    task = console.input("[bold blue] Task> [/bold blue]").strip()
                 except EOFError:
                     break
                 
@@ -822,20 +806,20 @@ class LLMBrowserAgent:
                     continue
                 
                 if task.lower() in ['quit', 'exit', 'q']:
-                    console.print("[dim]👋 Shutting down...[/dim]")
+                    console.print("[dim] Shutting down...[/dim]")
                     break
                 
                 if task.lower() == 'reset':
-                    console.print("[yellow]🔄 Resetting browser...[/yellow]")
+                    console.print("[yellow] Resetting browser...[/yellow]")
                     try:
                         if self._owns_browser:
                             self.browser.close()
                         self.browser = BrowserAgent(headless=False)
                         self.commands = build_command_registry(self.browser)
                         self._owns_browser = True
-                        console.print("[green]✓ Browser reset complete[/green]\n")
+                        console.print("[green] Browser reset complete[/green]\n")
                     except Exception as e:
-                        console.print(f"[red]❌ Reset failed: {e}[/red]\n")
+                        console.print(f"[red] Reset failed: {e}[/red]\n")
                     continue
                 
                 # Reset conversation state for new task
@@ -846,15 +830,15 @@ class LLMBrowserAgent:
                 try:
                     self.execute_task(task)
                 except KeyboardInterrupt:
-                    console.print("\n[yellow]⚠️  Task interrupted[/yellow]\n")
+                    console.print("\n[yellow]ï¸  Task interrupted[/yellow]\n")
                 except Exception as e:
-                    console.print(f"[red]❌ Task execution error: {e}[/red]\n")
+                    console.print(f"[red] Task execution error: {e}[/red]\n")
                     if os.getenv("DEBUG"):
                         import traceback
                         console.print(f"[dim]{traceback.format_exc()}[/dim]\n")
         
         except KeyboardInterrupt:
-            console.print("\n[dim]👋 Interrupted[/dim]")
+            console.print("\n[dim] Interrupted[/dim]")
         
         finally:
             self.close()
@@ -885,7 +869,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s --headless                    # Run in headless mode
-  %(prog)s --model llama-3.1-70b-versatile  # Use larger model
+  %(prog)s --model meta-llama/llama-guard-4-12b  # Use larger model
   %(prog)s --max-steps 50                # Allow more steps
         """
     )
@@ -928,16 +912,16 @@ Examples:
             agent.interactive_mode()
     
     except KeyboardInterrupt:
-        console.print("\n[dim]👋 Interrupted[/dim]")
+        console.print("\n[dim] Interrupted[/dim]")
         sys.exit(130)
     
     except ValueError as e:
-        console.print(f"[bold red]❌ Configuration Error:[/bold red] {e}")
+        console.print(f"[bold red] Configuration Error:[/bold red] {e}")
         console.print("[dim]Set GROQ_API_KEY environment variable or use --api-key[/dim]")
         sys.exit(1)
     
     except Exception as e:
-        console.print(f"[bold red]❌ Fatal Error:[/bold red] {e}")
+        console.print(f"[bold red] Fatal Error:[/bold red] {e}")
         if os.getenv("DEBUG"):
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")

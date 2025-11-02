@@ -98,7 +98,7 @@ class NavigationMixin:
             })
             
             # Display results
-            console.print(f"[green]✓ Loaded:[/green] {title or processed_url}")
+            console.print(f"[green] Loaded:[/green] {title or processed_url}")
             console.print(f"[dim]Time: {load_time:.2f}s | URL: {self.page.url}[/dim]")
             
             self.log_action("navigate", f"{processed_url} [{load_time:.2f}s]", success=True)
@@ -223,7 +223,7 @@ class NavigationMixin:
                 self.page.reload(wait_until="domcontentloaded", timeout=self.timeout)
             
             self.log_action("refresh", f"{current_url} [hard={hard}]", success=True)
-            console.print(f"[green]✓ Refreshed:[/green] {current_url}")
+            console.print(f"[green] Refreshed:[/green] {current_url}")
             return True
             
         except Exception as e:
@@ -368,7 +368,7 @@ class NavigationMixin:
                 try:
                     import pyperclip
                     pyperclip.copy(current_url)
-                    console.print("[green]✓ Copied to clipboard[/green]")
+                    console.print("[green] Copied to clipboard[/green]")
                 except ImportError:
                     console.print("[dim]Install pyperclip to enable clipboard copy[/dim]")
             
@@ -473,7 +473,7 @@ class NavigationMixin:
                     timestamp = entry['timestamp'].split('T')[1].split('.')[0]
                 
                 # Status indicator
-                status = "✓" if entry['success'] else "✗"
+                status = "" if entry['success'] else ""
                 color = "green" if entry['success'] else "red"
                 
                 # Action description
@@ -586,7 +586,7 @@ class NavigationMixin:
             
             self.page.wait_for_load_state(strategy, timeout=wait_time)
             
-            console.print(f"[green]✓ Page loaded[/green] [dim](strategy={strategy})[/dim]")
+            console.print(f"[green] Page loaded[/green] [dim](strategy={strategy})[/dim]")
             self.log_action("wait_for_load", f"{wait_time}ms [{strategy}]", success=True)
             return True
             
@@ -619,14 +619,14 @@ class NavigationMixin:
             if selector:
                 console.print(f"[cyan]Waiting for element:[/cyan] {selector}")
                 self.page.wait_for_selector(selector, timeout=wait_time)
-                console.print(f"[green]✓ Element appeared[/green]")
+                console.print(f"[green] Element appeared[/green]")
                 self.log_action("wait_for", f"selector: {selector}", success=True)
                 return True
             
             elif url_pattern:
                 console.print(f"[cyan]Waiting for URL:[/cyan] {url_pattern}")
                 self.page.wait_for_url(url_pattern, timeout=wait_time)
-                console.print(f"[green]✓ URL matched[/green]")
+                console.print(f"[green] URL matched[/green]")
                 self.log_action("wait_for", f"url: {url_pattern}", success=True)
                 return True
             

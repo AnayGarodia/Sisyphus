@@ -220,7 +220,7 @@ class LandingPage {
 
     this.closeModal("waitlistModal");
     this.showToast(
-      `Thanks ${data.name}! You're on the waitlist. We'll be in touch soon! 🚀`
+      `Thanks ${data.name}! You're on the waitlist. We'll be in touch soon! `
     );
 
     form.reset();
@@ -260,7 +260,7 @@ class LandingPage {
 
     this.closeModal("contactModal");
     this.showToast(
-      `Message sent! We'll get back to you within 24 hours, ${data.name}! ✉️`
+      `Message sent! We'll get back to you within 24 hours, ${data.name}! ️`
     );
 
     form.reset();

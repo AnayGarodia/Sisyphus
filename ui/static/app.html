@@ -2,188 +2,368 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta
+      name="description"
+      content="Sisyphus - Professional AI Agent Console"
+    />
+    <meta name="theme-color" content="#ffffff" />
     <title>Sisyphus - Agent Console</title>
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <!-- Navigation -->
-    <nav class="navbar">
-      <div class="nav-container">
-        <div class="logo">
-          <a href="index.html" class="logo-link">
-            <span class="logo-icon">🌀</span>
-            <span class="logo-text">Sisyphus</span>
-          </a>
-        </div>
-        <div class="nav-right">
-          <button
-            id="themeToggle"
-            class="theme-toggle"
-            aria-label="Toggle theme"
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <button
+          class="sidebar-toggle"
+          id="sidebarToggle"
+          aria-label="Toggle sidebar"
+          title="Toggle sidebar (Ctrl+B)"
+        >
+          <svg
+            class="sidebar-icon-open"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            viewBox="0 0 24 24"
           >
-            <svg class="sun-icon" width="20" height="20" fill="currentColor">
-              <circle cx="10" cy="10" r="3" />
-              <line
-                x1="10"
-                y1="1"
-                x2="10"
-                y2="3"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <line
-                x1="10"
-                y1="17"
-                x2="10"
-                y2="19"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <line
-                x1="1"
-                y1="10"
-                x2="3"
-                y2="10"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <line
-                x1="17"
-                y1="10"
-                x2="19"
-                y2="10"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-            </svg>
-          </button>
-          <a href="index.html" class="nav-link">Home</a>
-          <div class="status-indicator">
-            <span class="status-dot" id="statusDot"></span>
-            <span class="status-text" id="statusText">Connecting...</span>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <!-- Main App Container -->
-    <main class="app-container">
-      <!-- Left Side - Browser Output (No Header) -->
-      <div class="browser-container">
-        <div class="browser-viewport">
-          <img
-            id="browserDisplay"
-            class="browser-frame"
+            <polyline points="11 17 6 12 11 7"></polyline>
+            <polyline points="18 17 13 12 18 7"></polyline>
+          </svg>
+          <svg
+            class="sidebar-icon-closed"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            viewBox="0 0 24 24"
             style="display: none"
-            alt="Browser viewport"
-          />
-          <div id="placeholder" class="browser-placeholder">
-            <svg width="64" height="64">
-              <rect
-                x="8"
-                y="16"
-                width="48"
-                height="32"
-                rx="4"
-                fill="currentColor"
-                opacity="0.2"
+          >
+            <polyline points="13 17 18 12 13 7"></polyline>
+            <polyline points="6 17 11 12 6 7"></polyline>
+          </svg>
+        </button>
+        <div class="logo">
+          <div class="logo-icon" aria-hidden="true">
+            <svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" opacity="0.15" />
+              <path
+                d="M12 2a10 10 0 0 1 0 20 10 10 0 0 1 0-20z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
               />
+              <circle cx="12" cy="12" r="3" />
             </svg>
-            <h3>No browser output yet</h3>
-            <p>Run a browser automation task!</p>
           </div>
+          <span class="logo-text">Sisyphus Agent</span>
         </div>
       </div>
+      <div class="header-right">
+        <div class="status-badge" role="status" aria-live="polite">
+          <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+          <span class="status-text" id="statusText">Connecting...</span>
+        </div>
+        <button
+          class="theme-toggle"
+          id="themeToggle"
+          aria-label="Toggle theme"
+          title="Toggle dark mode (Ctrl+Shift+L)"
+        >
+          <svg
+            class="theme-icon sun-icon"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            viewBox="0 0 24 24"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
+            />
+          </svg>
+          <svg
+            class="theme-icon moon-icon"
+            width="20"
+            height="20"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            style="display: none"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+      </div>
+    </header>
 
-      <!-- Right Side - Chat Interface -->
-      <aside class="chat-sidebar">
-        <div class="chat-sidebar-content">
-          <!-- Chat Messages Area -->
-          <div class="chat-area">
-            <div id="chatMessages" class="chat-messages">
-              <div class="welcome-container">
-                <div class="welcome-icon">
-                  <svg width="48" height="48">
-                    <circle cx="24" cy="24" r="22" fill="#6366f1" opacity="0.2" />
-                    <circle cx="24" cy="24" r="14" fill="#6366f1" />
-                  </svg>
-                </div>
-                <div class="welcome-title">Welcome to Sisyphus!</div>
-                <div class="welcome-subtitle">
-                  Ask questions or give instructions. Your agent is standing by.
-                </div>
-                <div class="example-tasks">
-                  <div class="examples-label">Try:</div>
-                  <div class="example-chip">Search for latest AI news</div>
-                  <div class="example-chip">Find information on quantum computing</div>
-                  <div class="example-chip">Navigate to Wikipedia</div>
-                </div>
-              </div>
-            </div>
+    <!-- Main Container -->
+    <div class="main-container">
+      <!-- Collapsible Sidebar -->
+      <aside class="sidebar" id="sidebar" role="complementary">
+        <div class="sidebar-content">
+          <!-- Tabs -->
+          <div
+            class="sidebar-tabs"
+            role="tablist"
+            aria-label="Sidebar sections"
+          >
+            <button
+              class="tab-button active"
+              data-tab="terminal"
+              role="tab"
+              aria-selected="true"
+              aria-controls="terminalTab"
+              id="terminalTabButton"
+            >
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+              Terminal
+            </button>
+            <button
+              class="tab-button"
+              data-tab="commands"
+              role="tab"
+              aria-selected="false"
+              aria-controls="commandsTab"
+              id="commandsTabButton"
+            >
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                />
+              </svg>
+              Commands
+            </button>
           </div>
 
-          <!-- Chat Input (Bottom of Sidebar) -->
-          <div class="chat-input-container">
-            <div class="input-wrapper">
-              <button class="input-addon-btn" aria-label="Add attachment">
-                <svg
-                  width="24"
-                  height="24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-              <textarea
-                id="taskInput"
-                class="task-input"
-                placeholder="Ask anything"
-                rows="1"
-              ></textarea>
-              <button class="input-addon-btn" aria-label="Voice input">
-                <svg
-                  width="20"
-                  height="20"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
-                </svg>
-              </button>
-              <button id="sendBtn" class="action-btn send-btn">
-                <svg
-                  width="20"
-                  height="20"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
+          <!-- Tab Content -->
+          <div
+            class="tab-content active"
+            id="terminalTab"
+            role="tabpanel"
+            aria-labelledby="terminalTabButton"
+          >
+            <div class="tab-header">
+              <h3>Terminal Output</h3>
               <button
-                id="stopBtn"
-                class="action-btn stop-btn"
-                style="display: none"
+                class="clear-button"
+                id="clearTerminal"
+                aria-label="Clear terminal"
+                title="Clear terminal output"
               >
-                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                  <rect x="6" y="6" width="12" height="12" />
-                </svg>
+                Clear
               </button>
+            </div>
+            <div
+              class="terminal"
+              id="terminal"
+              role="log"
+              aria-live="polite"
+              aria-atomic="false"
+            ></div>
+          </div>
+
+          <div
+            class="tab-content"
+            id="commandsTab"
+            role="tabpanel"
+            aria-labelledby="commandsTabButton"
+          >
+            <div class="tab-header">
+              <h3>Command History</h3>
+              <button
+                class="clear-button"
+                id="clearCommands"
+                aria-label="Clear command history"
+                title="Clear all commands"
+              >
+                Clear
+              </button>
+            </div>
+            <div class="commands-list" id="commandsList">
+              <div class="empty-state">
+                <svg
+                  width="56"
+                  height="56"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                  />
+                </svg>
+                <p>No commands executed yet</p>
+              </div>
             </div>
           </div>
         </div>
       </aside>
-    </main>
+
+      <!-- Main Content Area -->
+      <main class="content" role="main">
+        <!-- Browser Viewport -->
+        <div class="viewport-container">
+          <div class="viewport-header">
+            <div class="viewport-info">
+              <span class="viewport-title">Browser Viewport</span>
+              <div class="viewport-stats">
+                <span
+                  class="stat-badge"
+                  id="fpsCounter"
+                  aria-label="Frames per second"
+                  title="Frames per second"
+                >
+                  --
+                </span>
+                <span
+                  class="stat-badge"
+                  id="latencyCounter"
+                  aria-label="Latency"
+                  title="Connection latency"
+                >
+                  --
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="viewport" id="viewport">
+            <img
+              id="browserFrame"
+              class="browser-frame"
+              alt="Browser viewport output"
+              role="img"
+            />
+            <div id="viewportPlaceholder" class="viewport-placeholder">
+              <svg
+                width="80"
+                height="80"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="9" y1="21" x2="9" y2="9" />
+              </svg>
+              <h3>No Active Session</h3>
+              <p>
+                Send a command to start browser automation and see the live
+                viewport
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Area -->
+        <div class="chat-input-area">
+          <div class="chat-container">
+            <form id="chatForm" onsubmit="return false;">
+              <div class="input-wrapper">
+                <textarea
+                  id="chatInput"
+                  class="chat-input"
+                  placeholder="Enter a command or ask a question..."
+                  rows="1"
+                  aria-label="Command input"
+                  required
+                ></textarea>
+                <button
+                  id="sendButton"
+                  class="send-button"
+                  type="submit"
+                  disabled
+                  aria-label="Send message"
+                  title="Send command (Enter)"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    viewBox="0 0 24 24"
+                  >
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+                <button
+                  id="stopButton"
+                  class="stop-button"
+                  type="button"
+                  style="display: none"
+                  aria-label="Stop current task"
+                  title="Stop task (Esc)"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              </div>
+            </form>
+            <div class="input-footer">
+              <span class="input-hint">
+                Press <kbd>Enter</kbd> to send • <kbd>Shift+Enter</kbd> for new
+                line
+              </span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
 
     <script src="app.js"></script>
   </body>

@@ -14,7 +14,7 @@ class InteractionMixin:
     Requires: self.page, self._get_element(), self.log_action(), self.element_map
     """
     
-    def click(self, selector: Union[int, str], force: bool = False, timeout: Optional[int] = None, retries: int = 2) -> bool:
+    def click(self, selector: Union[int, str], force: bool = False, timeout: Optional[int] = 10000, retries: int = 2) -> bool:
         """
         Click element by index, label, or CSS selector.
 

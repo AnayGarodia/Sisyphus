@@ -5,6 +5,7 @@ Combined UltraSmooth Browser Video Server:
  - 60 FPS streaming screenshots
  - Full command history and terminal tracking
  - Continuous streaming with greenlet-safe command execution
+ - Working STOP button
 """
 
 import asyncio
@@ -37,7 +38,7 @@ except ImportError as e:
 
 
 class CombinedVideoServer:
-    """Continuous 60fps video + complete command/terminal tracking."""
+    """Continuous 60fps video + complete command/terminal tracking with working stop."""
 
     def __init__(self, host="0.0.0.0", port=8085, fps=60):  
         self.host = host
@@ -64,8 +65,10 @@ class CombinedVideoServer:
         
         self.playwright_command_queue = queue.Queue()
 
+        # Task cancellation support
         self.task_state = None
         self.task_lock = threading.Lock()
+        self.task_cancelled = threading.Event()  # NEW: For cancellation
         self.streaming_active = False
         self.screenshot_task = None
 
@@ -130,7 +133,7 @@ class CombinedVideoServer:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self.websockets.add(ws)
-        print(f"✅ Client connected. Total: {len(self.websockets)}")
+        print(f" Client connected. Total: {len(self.websockets)}")
 
         await self.send_message(ws, {
             'type': 'status',
@@ -148,7 +151,7 @@ class CombinedVideoServer:
             print(f"WebSocket handler error: {e}")
         finally:
             self.websockets.discard(ws)
-            print(f"❌ Client disconnected. Total: {len(self.websockets)}")
+            print(f" Client disconnected. Total: {len(self.websockets)}")
         return ws
 
     async def handle_message(self, ws, data):
@@ -175,11 +178,11 @@ class CombinedVideoServer:
         """Worker thread that runs Playwright operations"""
         agent = None
         last_screenshot_time = 0
-        print("🧵 Playwright thread started")
+        print(" Playwright thread started")
         
         try:
             # Wait for initialization command
-            print("⏳ Waiting for init command...")
+            print("â³ Waiting for init command...")
             command = self.init_queue.get(timeout=60)
             
             if command.get('type') == 'init':
@@ -190,13 +193,13 @@ class CombinedVideoServer:
                     raise ValueError("GROQ_API_KEY not found in config or environment")
                     
                 model = config.get('model', 'llama-3.1-8b-instant')
-                print(f"🤖 Initializing agent with model: {model}")
+                print(f" Initializing agent with model: {model}")
                 
                 agent = LLMBrowserAgent(api_key=api_key, headless=False, model=model)
                 self.agent = agent
                 self.agent_ready.set()
                 self.init_response_queue.put({'type': 'init_success', 'model': agent.model})
-                print("✅ Agent initialized successfully")
+                print(" Agent initialized successfully")
             else:
                 self.init_response_queue.put({'type': 'init_error', 'error': 'Init timeout'})
                 return
@@ -215,6 +218,15 @@ class CombinedVideoServer:
                             last_screenshot_time = now
                         except Exception as e:
                             pass  # Silently ignore screenshot errors
+
+                # Check for cancellation
+                if self.task_cancelled.is_set():
+                    with self.task_lock:
+                        if self.task_state:
+                            self.task_state = None
+                            self.task_response_queue.put({'type': 'task_stopped'})
+                            print(" Task cancelled by user")
+                    self.task_cancelled.clear()
 
                 # Process task state
                 with self.task_lock:
@@ -238,29 +250,31 @@ class CombinedVideoServer:
                     if command.get('type') == 'execute_task':
                         self._init_task_state(agent, command.get('task', ''))
                     elif command.get('type') == 'stop_task':
-                        with self.task_lock:
-                            self.task_state = None
-                        self.task_response_queue.put({'type': 'task_stopped'})
+                        # Set cancellation flag
+                        self.task_cancelled.set()
                 except queue.Empty:
                     pass
 
                 time.sleep(0.001)
                 
         except Exception as e:
-            print(f"❌ Playwright thread error: {e}")
+            print(f" Playwright thread error: {e}")
             import traceback
             traceback.print_exc()
         finally:
             if agent:
                 try:
                     agent.close()
-                    print("🔒 Agent closed")
+                    print(" Agent closed")
                 except:
                     pass
-            print("🏁 Playwright thread ended.")
+            print(" Playwright thread ended.")
 
     def _init_task_state(self, agent, task):
         """Initialize task execution state"""
+        # Clear any previous cancellation
+        self.task_cancelled.clear()
+        
         agent.step_count = 0
         agent.conversation_history = []
         self.task_state = {
@@ -277,6 +291,10 @@ class CombinedVideoServer:
         """Step through task execution state machine"""
         state = self.task_state
         if not state:
+            return
+
+        # Check for cancellation at each step
+        if self.task_cancelled.is_set():
             return
 
         try:
@@ -311,8 +329,8 @@ class CombinedVideoServer:
                 if parsed.get('done'):
                     self.task_response_queue.put({
                         'type': 'task_completed',
-                        'reasoning': parsed.get('reasoning', ''),
-                        'terminal': state['terminal'],
+                        'reasoning': parsed.get('thinking', ''),
+                        'finish_message': parsed.get('finish_message', ''),
                         'command_history': state['commands'],
                     })
                     self.task_state = None
@@ -332,19 +350,22 @@ class CombinedVideoServer:
                 cmd_entry = {
                     'step': agent.step_count,
                     'command': parsed['command'],
-                    'reasoning': parsed.get('reasoning', '')
+                    'thinking': parsed.get('thinking', '')
                 }
                 state['commands'].append(cmd_entry)
-                term_msg = f"\n--- Step {agent.step_count} ---\nReasoning: {parsed.get('reasoning', '')}\nCommand: {parsed['command']}\n"
+                
+                # Create terminal message for this step only
+                term_msg = f"\n--- Step {agent.step_count} ---\nThinking: {parsed.get('thinking', '')}\nCommand: {parsed['command']}\n"
                 state['terminal'].append(term_msg)
                 
+                # Send only the NEW terminal line, not entire history
                 self.task_response_queue.put({
                     'type': 'step_start',
                     'step': agent.step_count,
                     'command': parsed['command'],
-                    'reasoning': parsed.get('reasoning', ''),
+                    'thinking': parsed.get('thinking', ''),
                     'command_history': list(state['commands']),
-                    'terminal': ''.join(state['terminal'])
+                    'terminal_line': term_msg  # Only send the new line
                 })
                 state['command_to_execute'] = parsed['command']
                 state['state'] = 'execute_command'
@@ -355,16 +376,17 @@ class CombinedVideoServer:
 
             elif state['state'] == 'process_command_result':
                 result = state['result']
-                status_line = '✅ SUCCESS\n' if result.success else '❌ FAILED\n'
+                status_line = ' SUCCESS\n' if result.success else ' FAILED\n'
                 output_text = result.output if isinstance(result.output, str) else str(result.output)
                 full_output = f"{status_line}{output_text}\n"
                 state['terminal'].append(full_output)
 
+                # Send only the NEW terminal line, not entire history
                 self.task_response_queue.put({
                     'type': 'step_result',
                     'success': result.success,
                     'output': output_text,
-                    'terminal': ''.join(state['terminal'])
+                    'terminal_line': full_output  # Only send the new line
                 })
                 
                 feedback = agent._build_feedback(result, state['task'])
@@ -375,17 +397,18 @@ class CombinedVideoServer:
             self.task_response_queue.put({'type': 'task_error', 'error': str(e)})
             self.task_state = None
 
+
     def start_thread(self):
         """Start the Playwright worker thread"""
         if not self.thread_running:
             self.thread_running = True
             self.playwright_thread = threading.Thread(target=self._playwright_thread_worker, daemon=True)
             self.playwright_thread.start()
-            print("✅ Playwright thread started")
+            print(" Playwright thread started")
 
     async def initialize_agent(self, config):
         """Initialize the browser agent"""
-        print("🔧 Initializing agent...")
+        print(" Initializing agent...")
         await self.broadcast({
             'type': 'terminal',
             'content': 'Initializing browser agent...\n',
@@ -402,20 +425,20 @@ class CombinedVideoServer:
             if response['type'] == 'init_success':
                 await self.broadcast({
                     'type': 'terminal',
-                    'content': f'✅ Ready (Model: {response["model"]})\n',
+                    'content': f' Ready (Model: {response["model"]})\n',
                     'style': 'success'
                 })
                 await self.broadcast({'type': 'status', 'ready': True, 'message': 'Ready'})
                 await self.start_streaming()
-                print("✅ Agent initialized and streaming started")
+                print(" Agent initialized and streaming started")
             else:
                 error_msg = response.get('error', 'Initialization failed')
                 await self.broadcast({'type': 'error', 'message': error_msg})
-                print(f"❌ Init failed: {error_msg}")
+                print(f" Init failed: {error_msg}")
         except Exception as e:
             error_msg = f"Initialization error: {str(e)}"
             await self.broadcast({'type': 'error', 'message': error_msg})
-            print(f"❌ {error_msg}")
+            print(f" {error_msg}")
 
     async def start_streaming(self):
         """Start video streaming"""
@@ -424,7 +447,7 @@ class CombinedVideoServer:
             self.streaming_active = True
             self.screenshot_task = asyncio.create_task(self.stream_video())
             await self.broadcast({'type': 'stream_started', 'fps': self.fps})
-            print(f"📹 Video streaming started at {self.fps} FPS")
+            print(f" Video streaming started at {self.fps} FPS")
 
     async def stop_streaming(self):
         """Stop video streaming"""
@@ -434,7 +457,7 @@ class CombinedVideoServer:
             if self.screenshot_task:
                 self.screenshot_task.cancel()
             await self.broadcast({'type': 'stream_stopped'})
-            print("⏸️ Video streaming stopped")
+            print("â¸ï¸ Video streaming stopped")
 
     async def stream_video(self):
         """Stream video frames to clients"""
@@ -454,9 +477,9 @@ class CombinedVideoServer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"❌ Stream error: {e}")
+                print(f" Stream error: {e}")
                 break
-        print("🛑 Video stream loop ended")
+        print(" Video stream loop ended")
 
     async def execute_task(self, task):
         """Execute a task"""
@@ -469,10 +492,10 @@ class CombinedVideoServer:
                 await self.broadcast({'type': 'error', 'message': 'A task is already running.'})
                 return
         
-        print(f"🚀 Executing task: {task}")
+        print(f" Executing task: {task}")
         await self.broadcast({
             'type': 'terminal',
-            'content': f'\n{"="*70}\nTASK: {task}\n{"="*70}\n',
+            'content': f'\n{"="*70}\n TASK: {task}\n{"="*70}\n',
             'style': 'task'
         })
         
@@ -495,25 +518,28 @@ class CombinedVideoServer:
                             'type': 'command',
                             'step': response['step'],
                             'command': response['command'],
-                            'reasoning': response['reasoning']
+                            'thinking': response['thinking']
                         })
+                        # Only send the new terminal line
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': response['terminal'],
+                            'content': response['terminal_line'],  # Changed from 'terminal'
                             'style': 'output'
                         })
                         
                     elif rtype == 'step_result':
+                        # Only send the new terminal line
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': response['terminal'],
+                            'content': response['terminal_line'],  # Changed from 'terminal'
                             'style': 'output'
                         })
                         
                     elif rtype == 'task_completed':
+                        finish_msg = response.get('finish_message', response.get('reasoning', ''))
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': f'\n{"="*70}\n✅ DONE\n{"="*70}\n\n{response["reasoning"]}\n',
+                            'content': f'\n{"="*70}\n TASK COMPLETED\n{"="*70}\n\n{finish_msg}\n',
                             'style': 'success'
                         })
                         await self.broadcast({'type': 'command_history', 'commands': response['command_history']})
@@ -522,7 +548,7 @@ class CombinedVideoServer:
                     elif rtype in ['task_error', 'parse_error']:
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': f'Error: {response["error"]}\n',
+                            'content': f' Error: {response["error"]}\n',
                             'style': 'error'
                         })
                         if rtype == 'task_error':
@@ -531,12 +557,17 @@ class CombinedVideoServer:
                     elif rtype == 'max_steps_reached':
                         await self.broadcast({
                             'type': 'terminal',
-                            'content': f'\n⚠️ Max steps reached\n',
+                            'content': f'\nï¸ Maximum steps reached\n',
                             'style': 'warning'
                         })
                         break
                         
                     elif rtype == 'task_stopped':
+                        await self.broadcast({
+                            'type': 'terminal',
+                            'content': f'\n Task stopped by user\n',
+                            'style': 'warning'
+                        })
                         break
                         
                 except queue.Empty:
@@ -544,27 +575,29 @@ class CombinedVideoServer:
                         if self.task_state is None:
                             break
         except Exception as e:
-            print(f"❌ Task execution error: {e}")
+            print(f" Task execution error: {e}")
             await self.broadcast({
                 'type': 'terminal',
-                'content': f'\n❌ {str(e)}\n',
+                'content': f'\n Error: {str(e)}\n',
                 'style': 'error'
             })
         finally:
             await self.broadcast({'type': 'task_end'})
-            print("✅ Task execution complete")
+            print(" Task execution complete")
 
     async def stop_task(self):
         """Stop the current task"""
         with self.task_lock:
             if self.task_state is not None:
-                self.task_queue.put({'type': 'stop_task'})
+                print("â¹ï¸ Stop button pressed - setting cancellation flag")
+                self.task_cancelled.set()
                 await self.broadcast({
                     'type': 'terminal',
-                    'content': '\n[Stopping task...]\n',
+                    'content': '\nâ¹ï¸ Stopping task...\n',
                     'style': 'warning'
                 })
-                print("⏹️ Task stop requested")
+            else:
+                print("ï¸ No task running to stop")
 
     async def send_message(self, ws, message):
         """Send message to a single websocket"""
@@ -584,18 +617,19 @@ class CombinedVideoServer:
 
     async def on_shutdown(self, app):
         """Cleanup on server shutdown"""
-        print("\n🛑 Shutting down server...")
+        print("\n Shutting down server...")
         await self.stop_streaming()
         
         if self.thread_running:
             self.shutdown_event.set()
+            self.task_cancelled.set()
             self.executor.shutdown(wait=False, cancel_futures=True)
             self.thread_running = False
             
             if self.playwright_thread and self.playwright_thread.is_alive():
                 self.playwright_thread.join(timeout=3)
         
-        print("✅ Shutdown complete.")
+        print(" Shutdown complete.")
 
     def run(self):
         """Start the server"""
@@ -606,25 +640,25 @@ class CombinedVideoServer:
         actual_port = int(os.environ.get('PORT', self.port))
         actual_host = os.environ.get('HOST', '0.0.0.0')
         
-        print(f"🚀 Server running at http://{actual_host}:{actual_port}")
-        print(f"🏠 Landing page: http://{actual_host}:{actual_port}/")
-        print(f"🖥️  Application: http://{actual_host}:{actual_port}/app")
-        print(f"📁 Static files: {Path(__file__).parent / 'static'}")
-        print(f"🔑 Make sure GROQ_API_KEY is set in environment")
+        print(f" Server running at http://{actual_host}:{actual_port}")
+        print(f" Landing page: http://{actual_host}:{actual_port}/")
+        print(f"ï¸  Application: http://{actual_host}:{actual_port}/app")
+        print(f" Static files: {Path(__file__).parent / 'static'}")
+        print(f" Make sure GROQ_API_KEY is set in environment")
         
         web.run_app(self.app, host=actual_host, port=actual_port, print=lambda x: None)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run the continuous streaming browser server.")
-    parser.add_argument('--host', default=os.environ.get('HOST', '0.0.0.0'), help='Host to bind to')  # <-- Changed
+    parser.add_argument('--host', default=os.environ.get('HOST', '0.0.0.0'), help='Host to bind to')
     parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8085)), help='Port to bind to')
     parser.add_argument('--fps', type=int, default=60, help='Frames per second for streaming')
     args = parser.parse_args()
     
     # Check for API key
     if not os.getenv('GROQ_API_KEY'):
-        print("⚠️  Warning: GROQ_API_KEY not found in environment")
+        print("ï¸  Warning: GROQ_API_KEY not found in environment")
         print("   Set it with: export GROQ_API_KEY='your-key-here'")
     
     server = CombinedVideoServer(host=args.host, port=args.port, fps=args.fps)
@@ -632,7 +666,7 @@ def main():
     try:
         server.run()
     except KeyboardInterrupt:
-        print("\n🛑 Server stopped by user.")
+        print("\n Server stopped by user.")
 
 
 if __name__ == '__main__':

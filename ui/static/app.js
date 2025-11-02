@@ -1,118 +1,347 @@
 /**
+ * ============================================
  * Sisyphus Agent Application
- * Modern WebSocket-based AI agent interface
+ * Professional WebSocket-based AI agent interface
+ * ============================================
  */
 
 class SisyphusAgent {
   constructor() {
+    // WebSocket connection
     this.ws = null;
     this.connected = false;
     this.taskRunning = false;
+
+    // Performance tracking
     this.frameCount = 0;
+    this.lastFrameTime = Date.now();
+
+    // Reconnection handling
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectTimeout = null;
 
+    // DOM elements cache
     this.elements = this.getElements();
+
+    // Initialize application
     this.init();
   }
 
+  /**
+   * Cache all DOM elements for better performance
+   */
   getElements() {
     return {
+      // Header elements
       statusDot: document.getElementById("statusDot"),
       statusText: document.getElementById("statusText"),
-      taskInput: document.getElementById("taskInput"),
-      sendBtn: document.getElementById("sendBtn"),
-      stopBtn: document.getElementById("stopBtn"),
-      browserDisplay: document.getElementById("browserDisplay"),
-      placeholder: document.getElementById("placeholder"),
-      chatMessages: document.getElementById("chatMessages"),
-      latencyBadge: document.getElementById("latencyBadge"),
-      qualityBadge: document.getElementById("qualityBadge"),
       themeToggle: document.getElementById("themeToggle"),
+      sidebarToggle: document.getElementById("sidebarToggle"),
+
+      // Sidebar elements
+      sidebar: document.getElementById("sidebar"),
+      terminal: document.getElementById("terminal"),
+      commandsList: document.getElementById("commandsList"),
+      clearTerminal: document.getElementById("clearTerminal"),
+      clearCommands: document.getElementById("clearCommands"),
+
+      // Tab elements
+      tabButtons: document.querySelectorAll(".tab-button"),
+
+      // Viewport elements
+      viewport: document.getElementById("viewport"),
+      browserFrame: document.getElementById("browserFrame"),
+      viewportPlaceholder: document.getElementById("viewportPlaceholder"),
+      fpsCounter: document.getElementById("fpsCounter"),
+      latencyCounter: document.getElementById("latencyCounter"),
+
+      // Chat elements
+      chatForm: document.getElementById("chatForm"),
+      chatInput: document.getElementById("chatInput"),
+      sendButton: document.getElementById("sendButton"),
+      stopButton: document.getElementById("stopButton"),
     };
   }
 
+  /**
+   * Initialize the application
+   */
   init() {
-    console.log("Initializing Sisyphus Agent...");
+    console.log(" Initializing Sisyphus Agent...");
+
     this.setupEventListeners();
     this.setupTheme();
-    this.setupExampleChips();
+    this.setupKeyboardShortcuts();
     this.connect();
-    this.startFPSCounter();
-    console.log("Sisyphus Agent initialization complete");
+    this.startPerformanceMonitoring();
+
+    console.log(" Sisyphus Agent initialized successfully");
   }
 
+  /**
+   * Setup all event listeners
+   */
   setupEventListeners() {
-    // Send button
-    if (this.elements.sendBtn) {
-      this.elements.sendBtn.addEventListener("click", () => this.sendTask());
-    }
+    // Theme toggle
+    this.elements.themeToggle?.addEventListener("click", () =>
+      this.toggleTheme()
+    );
+
+    // Sidebar toggle
+    this.elements.sidebarToggle?.addEventListener("click", () =>
+      this.toggleSidebar()
+    );
+
+    // Tab switching
+    this.elements.tabButtons.forEach((button) => {
+      button.addEventListener("click", () =>
+        this.switchTab(button.dataset.tab)
+      );
+    });
+
+    // Clear buttons
+    this.elements.clearTerminal?.addEventListener("click", () =>
+      this.clearTerminal()
+    );
+    this.elements.clearCommands?.addEventListener("click", () =>
+      this.clearCommands()
+    );
+
+    // Form submission
+    this.elements.chatForm?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!this.elements.sendButton.disabled) {
+        this.sendMessage();
+      }
+    });
 
     // Stop button
-    if (this.elements.stopBtn) {
-      this.elements.stopBtn.addEventListener("click", () => this.stopTask());
-    }
+    this.elements.stopButton?.addEventListener("click", () => this.stopTask());
 
-    // Enter key handling
-    if (this.elements.taskInput) {
-      this.elements.taskInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          if (!this.elements.sendBtn.disabled) {
-            this.sendTask();
-          }
+    // Chat input handling
+    this.elements.chatInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (!this.elements.sendButton.disabled) {
+          this.sendMessage();
         }
-      });
+      }
+    });
 
-      // Auto-resize textarea
-      this.elements.taskInput.addEventListener("input", () => {
-        this.autoResizeTextarea();
-      });
-    }
+    this.elements.chatInput?.addEventListener("input", () =>
+      this.handleInputChange()
+    );
+
+    // Window resize handler
+    window.addEventListener(
+      "resize",
+      this.debounce(() => this.handleResize(), 250)
+    );
+
+    // Visibility change handler
+    document.addEventListener("visibilitychange", () =>
+      this.handleVisibilityChange()
+    );
   }
 
-  setupTheme() {
-    if (this.elements.themeToggle) {
-      // Load theme from localStorage
-      const savedTheme = localStorage.getItem("theme");
-      if (savedTheme === "dark") {
-        document.body.classList.add("dark-theme");
+  /**
+   * Setup keyboard shortcuts
+   */
+  setupKeyboardShortcuts() {
+    document.addEventListener("keydown", (e) => {
+      // Ctrl/Cmd + B: Toggle sidebar
+      if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+        e.preventDefault();
+        this.toggleSidebar();
       }
 
-      this.elements.themeToggle.addEventListener("click", () => {
-        document.body.classList.toggle("dark-theme");
-        const theme = document.body.classList.contains("dark-theme")
-          ? "dark"
-          : "light";
-        localStorage.setItem("theme", theme);
-      });
-    }
-  }
+      // Ctrl/Cmd + Shift + L: Toggle theme
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "L") {
+        e.preventDefault();
+        this.toggleTheme();
+      }
 
-  setupExampleChips() {
-    const exampleChips = document.querySelectorAll(".example-chip");
-    exampleChips.forEach((chip) => {
-      chip.addEventListener("click", () => {
-        if (this.elements.taskInput) {
-          this.elements.taskInput.value = chip.textContent.trim();
-          this.elements.taskInput.focus();
-          this.autoResizeTextarea();
-        }
-      });
+      // Escape: Stop task
+      if (e.key === "Escape" && this.taskRunning) {
+        e.preventDefault();
+        this.stopTask();
+      }
+
+      // Ctrl/Cmd + K: Focus input
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        this.elements.chatInput?.focus();
+      }
     });
   }
 
-  autoResizeTextarea() {
-    const textarea = this.elements.taskInput;
-    if (textarea) {
-      textarea.style.height = "auto";
-      textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+  /**
+   * Setup theme from localStorage
+   */
+  setupTheme() {
+    const savedTheme = localStorage.getItem("sisyphus-theme");
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    ).matches;
+
+    if (savedTheme === "dark" || (!savedTheme && prefersDark)) {
+      document.body.classList.add("dark-theme");
+    }
+
+    this.updateThemeIcon();
+    this.updateMetaThemeColor();
+  }
+
+  /**
+   * Toggle theme
+   */
+  toggleTheme() {
+    document.body.classList.toggle("dark-theme");
+    const theme = document.body.classList.contains("dark-theme")
+      ? "dark"
+      : "light";
+    localStorage.setItem("sisyphus-theme", theme);
+    this.updateThemeIcon();
+    this.updateMetaThemeColor();
+  }
+
+  /**
+   * Update theme icon
+   */
+  updateThemeIcon() {
+    const sunIcon = document.querySelector(".sun-icon");
+    const moonIcon = document.querySelector(".moon-icon");
+    const isDark = document.body.classList.contains("dark-theme");
+
+    if (sunIcon && moonIcon) {
+      sunIcon.style.display = isDark ? "none" : "block";
+      moonIcon.style.display = isDark ? "block" : "none";
     }
   }
 
+  /**
+   * Update meta theme color for mobile browsers
+   */
+  updateMetaThemeColor() {
+    const isDark = document.body.classList.contains("dark-theme");
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+
+    if (metaTheme) {
+      metaTheme.setAttribute("content", isDark ? "#000000" : "#ffffff");
+    }
+  }
+
+  /**
+   * Toggle sidebar
+   */
+  toggleSidebar() {
+    const isCurrentlyCollapsed =
+      this.elements.sidebar?.classList.contains("collapsed");
+    this.elements.sidebar?.classList.toggle("collapsed");
+
+    // Update icons based on NEW state (after toggle)
+    const openIcon = document.querySelector(".sidebar-icon-open");
+    const closedIcon = document.querySelector(".sidebar-icon-closed");
+    const isNowCollapsed =
+      this.elements.sidebar?.classList.contains("collapsed");
+
+    if (openIcon && closedIcon) {
+      openIcon.style.display = isNowCollapsed ? "none" : "block";
+      closedIcon.style.display = isNowCollapsed ? "block" : "none";
+    }
+
+    // Save state to localStorage
+    localStorage.setItem("sisyphus-sidebar-collapsed", isNowCollapsed);
+  }
+
+  /**
+   * Switch between tabs
+   */
+  switchTab(tabName) {
+    // Update tab buttons
+    this.elements.tabButtons.forEach((btn) => {
+      const isActive = btn.dataset.tab === tabName;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive);
+    });
+
+    // Update tab content
+    document.querySelectorAll(".tab-content").forEach((content) => {
+      const isActive = content.id === `${tabName}Tab`;
+      content.classList.toggle("active", isActive);
+    });
+  }
+
+  /**
+   * Handle input changes
+   */
+  handleInputChange() {
+    this.autoResizeInput();
+    this.updateSendButtonState();
+  }
+
+  /**
+   * Auto-resize textarea
+   */
+  autoResizeInput() {
+    if (this.elements.chatInput) {
+      // Reset height to get accurate scrollHeight
+      this.elements.chatInput.style.height = "24px";
+
+      // Calculate new height (max 6 lines = ~120px)
+      const newHeight = Math.min(this.elements.chatInput.scrollHeight, 120);
+      this.elements.chatInput.style.height = newHeight + "px";
+    }
+  }
+
+  /**
+   * Update send button state
+   */
+  updateSendButtonState() {
+    if (!this.elements.sendButton || !this.elements.chatInput) return;
+
+    const hasText = this.elements.chatInput.value.trim().length > 0;
+    this.elements.sendButton.disabled =
+      !this.connected || !hasText || this.taskRunning;
+  }
+
+  /**
+   * Handle window resize
+   */
+  handleResize() {
+    // Adjust sidebar on mobile if needed
+    if (window.innerWidth <= 768) {
+      const isCollapsed = localStorage.getItem("sisyphus-sidebar-collapsed");
+      if (isCollapsed === null) {
+        this.elements.sidebar?.classList.add("collapsed");
+      }
+    }
+  }
+
+  /**
+   * Handle visibility change
+   */
+  handleVisibilityChange() {
+    if (document.hidden) {
+      console.log(" Page hidden, pausing updates");
+    } else {
+      console.log("🟢 Page visible, resuming updates");
+      // Reconnect if disconnected while hidden
+      if (!this.connected && this.ws?.readyState !== WebSocket.CONNECTING) {
+        this.connect();
+      }
+    }
+  }
+
+  // ============================================
+  // WebSocket Connection Management
+  // ============================================
+
+  /**
+   * Connect to WebSocket server
+   */
   connect() {
-    // Clear any existing reconnect timeout
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -122,79 +351,103 @@ class SisyphusAgent {
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     this.updateStatus("Connecting...", false);
-    console.log("Attempting WebSocket connection to:", wsUrl);
+    console.log(" Connecting to:", wsUrl);
 
     try {
       this.ws = new WebSocket(wsUrl);
       this.setupWebSocketHandlers();
     } catch (error) {
-      console.error("WebSocket creation failed:", error);
+      console.error(" WebSocket creation failed:", error);
       this.handleConnectionError(error);
     }
   }
 
+  /**
+   * Setup WebSocket event handlers
+   */
   setupWebSocketHandlers() {
+    if (!this.ws) return;
+
     this.ws.onopen = () => this.handleOpen();
-    this.ws.onmessage = (event) => this.handleIncomingMessage(event);
-    this.ws.onerror = (error) => this.handleError(error);
+    this.ws.onmessage = (event) => this.handleMessage(event);
+    this.ws.onerror = (error) => {
+      console.error(" WebSocket error:", error);
+      this.handleConnectionError(error);
+    };
     this.ws.onclose = (event) => this.handleClose(event);
   }
 
+  /**
+   * Handle WebSocket open
+   */
   handleOpen() {
-    console.log("✅ WebSocket connected");
+    console.log(" WebSocket connected");
     this.connected = true;
     this.reconnectAttempts = 0;
     this.updateStatus("Connected", true);
-    if (this.elements.sendBtn) {
-      this.elements.sendBtn.disabled = false;
-    }
+    this.updateSendButtonState();
 
-    // Send initialize message
-    this.send({
-      type: "initialize",
-      config: {},
-    });
+    // Send initialization message
+    this.send({ type: "initialize", config: {} });
+    this.addTerminalLine("=== Connected to Sisyphus Agent ===", "success");
   }
 
-  handleIncomingMessage(event) {
+  /**
+   * Handle incoming WebSocket messages
+   */
+  handleMessage(event) {
     try {
       const message = JSON.parse(event.data);
-      console.log("Received message:", message.type, message);
-      this.handleMessage(message);
+      console.log(" Received:", message.type);
+
+      // Message type handlers
+      const handlers = {
+        status: () => this.handleStatus(message),
+        task_start: () => this.onTaskStart(message.task),
+        task_end: () => this.onTaskEnd(),
+        command: () => this.handleCommand(message),
+        terminal: () => this.handleTerminal(message),
+        frame: () => this.updateFrame(message.data, message.timestamp),
+        stream_started: () => this.onStreamStarted(message.fps),
+        stream_stopped: () => this.onStreamStopped(),
+        error: () => this.handleError(message),
+        command_history: () => this.handleCommandHistory(message),
+      };
+
+      const handler = handlers[message.type];
+      if (handler) {
+        handler();
+      } else {
+        console.warn("️ Unknown message type:", message.type);
+      }
     } catch (error) {
-      console.error("Message parsing error:", error);
+      console.error(" Message parsing error:", error);
+      this.addTerminalLine(`Error parsing message: ${error.message}`, "error");
     }
   }
 
-  handleError(error) {
-    console.error("WebSocket error:", error);
-  }
-
+  /**
+   * Handle WebSocket close
+   */
   handleClose(event) {
-    console.log(
-      "WebSocket disconnected. Code:",
-      event.code,
-      "Reason:",
-      event.reason
-    );
+    console.log(" WebSocket closed:", event.code, event.reason);
     this.connected = false;
     this.updateStatus("Disconnected", false);
-    if (this.elements.sendBtn) {
-      this.elements.sendBtn.disabled = true;
-    }
+    this.updateSendButtonState();
+    this.hideBrowser();
 
-    this.hideBrowserDisplay();
+    this.addTerminalLine("=== Disconnected from agent ===", "error");
 
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+    // Attempt reconnection
+    if (this.reconnectAttempts < this.maxReconnectAttempts && !event.wasClean) {
       this.reconnectAttempts++;
       const delay = Math.min(
         1000 * Math.pow(2, this.reconnectAttempts - 1),
         10000
       );
 
-      this.addChatMessage(
-        "status",
-        `Connection closed. Reconnecting in ${delay / 1000}s... (Attempt ${
+      this.addTerminalLine(
+        `Reconnecting in ${delay / 1000}s... (Attempt ${
           this.reconnectAttempts
         }/${this.maxReconnectAttempts})`
       );
@@ -204,105 +457,291 @@ class SisyphusAgent {
           this.connect();
         }
       }, delay);
-    } else {
-      this.addChatMessage(
-        "error",
-        "Maximum reconnection attempts reached. Please refresh the page."
+    } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.addTerminalLine(
+        "Maximum reconnection attempts reached. Please refresh the page.",
+        "error"
       );
+      this.updateStatus("Connection Failed", false);
     }
   }
 
+  /**
+   * Handle connection error
+   */
   handleConnectionError(error) {
     this.updateStatus("Connection Failed", false);
-    this.addChatMessage(
-      "error",
-      `Failed to establish connection: ${error.message || error}`
+    this.addTerminalLine(
+      `Failed to connect: ${error.message || error}`,
+      "error"
     );
   }
 
-  handleMessage(message) {
-    const handlers = {
-      status: () => this.handleStatus(message),
-      task_start: () => this.onTaskStart(message.task),
-      task_end: () => this.onTaskEnd(),
-      command: () => this.handleCommand(message),
-      terminal: () => this.handleTerminal(message),
-      frame: () => {
-        console.log("📸 Frame received");
-        this.updateFrame(message.data, message.timestamp);
-      },
-      stream_started: () => this.onStreamStarted(message.fps),
-      stream_stopped: () => this.onStreamStopped(),
-      error: () => this.handleErrorMessage(message),
-      command_history: () => this.handleCommandHistory(message),
-    };
+  // ============================================
+  // Message Handlers
+  // ============================================
 
-    const handler = handlers[message.type];
-    if (handler) {
-      handler();
-    } else {
-      console.log("Unknown message type:", message.type, message);
-    }
-  }
-
+  /**
+   * Handle status message
+   */
   handleStatus(message) {
     if (message.ready) {
       this.updateStatus(message.message || "Ready", true);
-      this.addChatMessage("agent", message.message || "Agent ready");
+      this.addTerminalLine(message.message || "Agent ready", "success");
     } else {
-      this.updateStatus(message.message || "Initializing...", false);
-      this.addChatMessage("status", message.message || "Agent initializing...");
+      this.addTerminalLine(message.message || "Initializing...");
     }
   }
 
+  /**
+   * Handle command message
+   */
   handleCommand(message) {
-    this.addChatMessage(
-      "agent",
-      `**Step ${message.step}:** ${message.command}\n\n*${
-        message.reasoning || "Executing command..."
-      }*`
-    );
+    this.addCommand(message.step, message.command, message.reasoning);
+    this.addTerminalLine(`[Step ${message.step}] ${message.command}`);
+
+    if (message.reasoning) {
+      this.addTerminalLine(`  → ${message.reasoning}`);
+    }
   }
 
+  /**
+   * Handle terminal output
+   */
   handleTerminal(message) {
-    // Display terminal output in chat
     const content = message.content || "";
     if (content.trim()) {
-      this.addChatMessage("agent", content);
+      this.addTerminalLine(content);
     }
   }
 
+  /**
+   * Handle error message
+   */
+  handleError(message) {
+    this.addTerminalLine(`ERROR: ${message.message}`, "error");
+  }
+
+  /**
+   * Handle command history
+   */
   handleCommandHistory(message) {
     if (message.commands && Array.isArray(message.commands)) {
       console.log(
-        "Command history updated:",
+        " Command history updated:",
         message.commands.length,
         "commands"
       );
     }
   }
 
-  handleErrorMessage(message) {
-    this.addChatMessage("error", message.message);
+  /**
+   * Handle stream started
+   */
+  onStreamStarted(fps) {
+    console.log(` Stream started at ${fps} FPS`);
+    this.addTerminalLine(
+      `Browser stream started at ${fps || 60} FPS`,
+      "success"
+    );
   }
 
+  /**
+   * Handle stream stopped
+   */
+  onStreamStopped() {
+    console.log(" Stream stopped");
+    this.hideBrowser();
+    this.addTerminalLine("Browser stream stopped");
+  }
+
+  // ============================================
+  // Send Messages
+  // ============================================
+
+  /**
+   * Send message to server
+   */
   send(message) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
-      console.log("Sent:", message.type);
+      console.log(" Sent:", message.type);
+      return true;
     } else {
-      console.error(
-        "Cannot send: WebSocket not connected. State:",
-        this.ws?.readyState
+      console.error(" Cannot send - not connected");
+      this.addTerminalLine(
+        "Cannot send message - not connected to server",
+        "error"
       );
-      this.addChatMessage("error", "Cannot send message - not connected");
+      return false;
     }
   }
 
+  /**
+   * Send user message
+   */
+  sendMessage() {
+    const message = this.elements.chatInput?.value.trim();
+    if (!message || !this.connected || this.taskRunning) {
+      return;
+    }
+
+    // Add to terminal
+    this.addTerminalLine(`> ${message}`, "success");
+
+    // Add to commands tab
+    this.addUserCommand(message);
+
+    // Clear input
+    if (this.elements.chatInput) {
+      this.elements.chatInput.value = "";
+      this.elements.chatInput.style.height = "24px";
+      this.updateSendButtonState();
+    }
+
+    // Send execute task command
+    this.send({
+      type: "execute_task",
+      task: message,
+    });
+  }
+
+  /**
+   * Add user command to history
+   */
+  addUserCommand(command) {
+    if (!this.elements.commandsList) return;
+
+    // Remove empty state if present
+    const emptyState = this.elements.commandsList.querySelector(".empty-state");
+    if (emptyState) {
+      emptyState.remove();
+    }
+
+    const commandItem = document.createElement("div");
+    commandItem.className = "command-item user-command";
+
+    commandItem.innerHTML = `
+      <div class="command-step success">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        USER INPUT
+      </div>
+      <div class="command-text">${this.escapeHtml(command)}</div>
+      <div class="command-reasoning">Command sent to agent</div>
+    `;
+
+    this.elements.commandsList.appendChild(commandItem);
+    this.elements.commandsList.scrollTop =
+      this.elements.commandsList.scrollHeight;
+  }
+
+  /**
+   * Stop current task
+   */
+  stopTask() {
+    this.addTerminalLine("Stopping task...", "error");
+    this.send({ type: "stop_task" });
+  }
+
+  // ============================================
+  // Task State Management
+  // ============================================
+
+  /**
+   * Handle task start
+   */
+  onTaskStart(task) {
+    this.taskRunning = true;
+    this.updateButtonStates(true);
+
+    this.addTerminalLine("─".repeat(60));
+    this.addTerminalLine(`Executing task: ${task}`, "success");
+  }
+
+  /**
+   * Handle task end
+   */
+  onTaskEnd() {
+    this.taskRunning = false;
+    this.updateButtonStates(false);
+
+    this.addTerminalLine("Task completed", "success");
+    this.addTerminalLine("─".repeat(60));
+
+    // Add task completion notification to commands list
+    this.addTaskCompleteNotification();
+
+    // Focus input for next command
+    setTimeout(() => {
+      this.elements.chatInput?.focus();
+    }, 100);
+  }
+
+  /**
+   * Add task complete notification to commands list
+   */
+  addTaskCompleteNotification() {
+    if (!this.elements.commandsList) return;
+
+    // Remove empty state if present
+    const emptyState = this.elements.commandsList.querySelector(".empty-state");
+    if (emptyState) {
+      emptyState.remove();
+    }
+
+    const commandItem = document.createElement("div");
+    commandItem.className = "command-item task-complete";
+
+    const timestamp = this.formatTime(new Date());
+
+    commandItem.innerHTML = `
+      <div class="command-step info">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        TASK COMPLETED
+      </div>
+      <div class="command-text">Task finished successfully at ${timestamp}</div>
+      <div class="command-reasoning">All steps executed and task completed</div>
+    `;
+
+    this.elements.commandsList.appendChild(commandItem);
+    this.elements.commandsList.scrollTop =
+      this.elements.commandsList.scrollHeight;
+  }
+
+  /**
+   * Update button states based on task running
+   */
+  updateButtonStates(isRunning) {
+    if (this.elements.sendButton) {
+      this.elements.sendButton.style.display = isRunning ? "none" : "flex";
+    }
+    if (this.elements.stopButton) {
+      this.elements.stopButton.style.display = isRunning ? "flex" : "none";
+    }
+    if (this.elements.chatInput) {
+      this.elements.chatInput.disabled = isRunning;
+    }
+
+    this.updateSendButtonState();
+  }
+
+  // ============================================
+  // UI Updates
+  // ============================================
+
+  /**
+   * Update connection status
+   */
   updateStatus(text, isConnected) {
     if (this.elements.statusText) {
       this.elements.statusText.textContent = text;
     }
+
     if (this.elements.statusDot) {
       this.elements.statusDot.classList.toggle("connected", isConnected);
       this.elements.statusDot.classList.toggle(
@@ -312,167 +751,270 @@ class SisyphusAgent {
     }
   }
 
+  /**
+   * Update browser frame
+   */
   updateFrame(dataUrl, timestamp) {
     if (!dataUrl) return;
 
-    // Update the image
-    if (this.elements.browserDisplay) {
-      this.elements.browserDisplay.src = dataUrl;
-      this.elements.browserDisplay.style.display = "block";
+    if (this.elements.browserFrame) {
+      this.elements.browserFrame.src = dataUrl;
+      this.elements.browserFrame.classList.add("visible");
     }
 
-    // Hide placeholder
-    if (this.elements.placeholder) {
-      this.elements.placeholder.style.display = "none";
+    if (this.elements.viewportPlaceholder) {
+      this.elements.viewportPlaceholder.style.display = "none";
     }
 
     this.frameCount++;
+    this.lastFrameTime = Date.now();
 
-    if (timestamp && this.elements.latencyBadge) {
+    // Update latency counter
+    if (timestamp && this.elements.latencyCounter) {
       const latency = Date.now() - timestamp * 1000;
       if (latency >= 0 && latency < 5000) {
-        this.elements.latencyBadge.textContent = `~${Math.round(latency)}ms`;
+        this.elements.latencyCounter.textContent = `${Math.round(latency)}ms`;
+        this.elements.latencyCounter.classList.add("active");
       }
     }
   }
 
-  hideBrowserDisplay() {
-    if (this.elements.browserDisplay) {
-      this.elements.browserDisplay.style.display = "none";
+  /**
+   * Hide browser viewport
+   */
+  hideBrowser() {
+    if (this.elements.browserFrame) {
+      this.elements.browserFrame.classList.remove("visible");
+      this.elements.browserFrame.src = "";
     }
-    if (this.elements.placeholder) {
-      this.elements.placeholder.style.display = "flex";
+
+    if (this.elements.viewportPlaceholder) {
+      this.elements.viewportPlaceholder.style.display = "flex";
+    }
+
+    if (this.elements.latencyCounter) {
+      this.elements.latencyCounter.textContent = "--";
+      this.elements.latencyCounter.classList.remove("active");
+    }
+
+    if (this.elements.fpsCounter) {
+      this.elements.fpsCounter.textContent = "--";
+      this.elements.fpsCounter.classList.remove("active");
     }
   }
 
-  onStreamStarted(fps) {
-    console.log(`Stream started at ${fps} FPS`);
-    this.addChatMessage("agent", `Browser stream started at ${fps || 60} FPS`);
-  }
-
-  onStreamStopped() {
-    console.log("Stream stopped");
-    this.hideBrowserDisplay();
-    this.addChatMessage("status", "Stream stopped");
-  }
-
-  startFPSCounter() {
+  /**
+   * Start performance monitoring
+   */
+  startPerformanceMonitoring() {
     setInterval(() => {
-      if (this.elements.qualityBadge) {
+      if (this.elements.fpsCounter) {
         if (this.frameCount > 0) {
-          this.elements.qualityBadge.textContent = `${this.frameCount} FPS`;
+          this.elements.fpsCounter.textContent = `${this.frameCount} FPS`;
+          this.elements.fpsCounter.classList.add("active");
           this.frameCount = 0;
         } else {
-          this.elements.qualityBadge.textContent = "HD";
+          // Check if we haven't received a frame in a while
+          const timeSinceLastFrame = Date.now() - this.lastFrameTime;
+          if (timeSinceLastFrame > 2000) {
+            this.elements.fpsCounter.textContent = "--";
+            this.elements.fpsCounter.classList.remove("active");
+          }
         }
       }
     }, 1000);
   }
 
-  sendTask() {
-    const task = this.elements.taskInput?.value.trim();
-    if (!task || !this.connected || this.taskRunning) {
-      console.log("Cannot send task:", {
-        task: !!task,
-        connected: this.connected,
-        taskRunning: this.taskRunning,
-      });
-      return;
+  // ============================================
+  // Terminal Management
+  // ============================================
+
+  /**
+   * Add line to terminal
+   */
+  addTerminalLine(text, type = "") {
+    if (!this.elements.terminal) return;
+
+    const line = document.createElement("div");
+    line.className = `terminal-line ${type}`;
+    line.textContent = `[${this.formatTime(new Date())}] ${text}`;
+
+    this.elements.terminal.appendChild(line);
+
+    // Auto-scroll to bottom
+    this.elements.terminal.scrollTop = this.elements.terminal.scrollHeight;
+
+    // Limit terminal history to prevent memory issues
+    const lines = this.elements.terminal.querySelectorAll(".terminal-line");
+    if (lines.length > 1000) {
+      lines[0].remove();
     }
-
-    // Remove welcome container when first task is sent
-    const welcome = this.elements.chatMessages?.querySelector(
-      ".welcome-container"
-    );
-    if (welcome) {
-      welcome.remove();
-    }
-
-    // Add user message to chat
-    this.addChatMessage("user", task);
-
-    this.elements.taskInput.value = "";
-    this.elements.taskInput.style.height = "auto";
-
-    this.send({
-      type: "execute_task",
-      task: task,
-    });
   }
 
-  stopTask() {
-    this.addChatMessage("status", "Stopping task...");
-    this.send({
-      type: "stop_task",
-    });
+  /**
+   * Clear terminal
+   */
+  clearTerminal() {
+    if (this.elements.terminal) {
+      this.elements.terminal.innerHTML = "";
+      this.addTerminalLine("Terminal cleared");
+    }
   }
 
-  onTaskStart(task) {
-    this.taskRunning = true;
-    if (this.elements.sendBtn) {
-      this.elements.sendBtn.style.display = "none";
-    }
-    if (this.elements.stopBtn) {
-      this.elements.stopBtn.style.display = "flex";
-    }
-    if (this.elements.taskInput) {
-      this.elements.taskInput.disabled = true;
+  // ============================================
+  // Commands Management
+  // ============================================
+
+  /**
+   * Add command to history
+   */
+  addCommand(step, command, reasoning) {
+    if (!this.elements.commandsList) return;
+
+    // Remove empty state if present
+    const emptyState = this.elements.commandsList.querySelector(".empty-state");
+    if (emptyState) {
+      emptyState.remove();
     }
 
-    this.addChatMessage("status", "⚙️ Executing task...");
+    const commandItem = document.createElement("div");
+    commandItem.className = "command-item";
+    commandItem.setAttribute("role", "article");
+    commandItem.setAttribute("aria-label", `Command step ${step}`);
+
+    commandItem.innerHTML = `
+      <div class="command-step">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <polyline points="9 11 12 14 22 4"></polyline>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+        STEP ${step}
+      </div>
+      <div class="command-text">${this.escapeHtml(command)}</div>
+      ${
+        reasoning
+          ? `<div class="command-reasoning">${this.escapeHtml(reasoning)}</div>`
+          : ""
+      }
+    `;
+
+    this.elements.commandsList.appendChild(commandItem);
+
+    // Auto-scroll to bottom
+    this.elements.commandsList.scrollTop =
+      this.elements.commandsList.scrollHeight;
+
+    // Limit command history
+    const items = this.elements.commandsList.querySelectorAll(".command-item");
+    if (items.length > 100) {
+      items[0].remove();
+    }
   }
 
-  onTaskEnd() {
-    this.taskRunning = false;
-    if (this.elements.sendBtn) {
-      this.elements.sendBtn.style.display = "flex";
+  /**
+   * Clear commands history
+   */
+  clearCommands() {
+    if (this.elements.commandsList) {
+      this.elements.commandsList.innerHTML = `
+        <div class="empty-state">
+          <svg
+            width="56"
+            height="56"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          <p>No commands executed yet</p>
+        </div>
+      `;
     }
-    if (this.elements.stopBtn) {
-      this.elements.stopBtn.style.display = "none";
-    }
-    if (this.elements.taskInput) {
-      this.elements.taskInput.disabled = false;
-    }
-
-    this.addChatMessage("status", "✅ Task completed");
   }
 
-  addChatMessage(type, content) {
-    if (!this.elements.chatMessages) return;
+  // ============================================
+  // Utility Methods
+  // ============================================
 
-    const container = this.elements.chatMessages;
-    const welcome = container.querySelector(".welcome-container");
-    if (welcome) {
-      welcome.remove();
-    }
-
-    const msg = document.createElement("div");
-    msg.className = `chat-message ${type}`;
-    
-    // Handle markdown-style formatting for bold and italic
-    const formattedContent = content
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.+?)\*/g, "<em>$1</em>")
-      .replace(/\n/g, "<br>");
-    
-    msg.innerHTML = formattedContent;
-
-    container.appendChild(msg);
-    
-    // Smooth scroll to bottom
-    container.scrollTop = container.scrollHeight;
-  }
-
+  /**
+   * Escape HTML to prevent XSS
+   */
   escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }
+
+  /**
+   * Format time for terminal output
+   */
+  formatTime(date) {
+    return date.toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  /**
+   * Debounce function for performance
+   */
+  debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  /**
+   * Cleanup on page unload
+   */
+  cleanup() {
+    if (this.ws) {
+      this.ws.close();
+    }
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+  }
 }
 
-// Initialize application when DOM is ready
+// ============================================
+// Initialize Application
+// ============================================
+
+// Initialize when DOM is ready
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("DOM loaded, initializing Sisyphus Agent...");
+  console.log(" DOM loaded, initializing Sisyphus Agent...");
+
+  // Create global instance
   window.sisyphusAgent = new SisyphusAgent();
-  console.log("✅ Sisyphus Agent ready");
+
+  // Cleanup on page unload
+  window.addEventListener("beforeunload", () => {
+    window.sisyphusAgent?.cleanup();
+  });
 });
+
+// Handle service worker if needed (for PWA support in future)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    // Service worker registration can be added here if needed
+  });
+}
+
+// Export for module usage if needed
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = SisyphusAgent;
+}

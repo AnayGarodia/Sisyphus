@@ -727,14 +727,14 @@ class ScanningMixin:
         """Display scan results with advanced formatting."""
         filter_text = f" ({filter_type})" if filter_type else ""
         mode_text = " [SMART]" if smart_mode else ""
-        score_text = f" [score≥{min_score:.1f}]" if min_score > 0 else ""
+        score_text = f" [scoreâ‰¥{min_score:.1f}]" if min_score > 0 else ""
         
         console.print(f"\n[bold cyan]SCAN RESULTS{filter_text}{mode_text}{score_text}[/bold cyan]")
-        console.print("─" * 90)
+        console.print("â”€" * 90)
         
         if not elements:
             console.print("[yellow]No interactive elements found[/yellow]")
-            console.print("─" * 90)
+            console.print("â”€" * 90)
             return
         
         # Group by type
@@ -765,7 +765,7 @@ class ScanningMixin:
             for elem in type_elements:
                 # Format with score and primary indicator
                 score_str = f"{elem.score:.2f}"
-                primary_marker = " ⭐" if elem.is_primary_action else ""
+                primary_marker = " â­" if elem.is_primary_action else ""
                 
                 if smart_mode:
                     console.print(
@@ -775,10 +775,10 @@ class ScanningMixin:
                 else:
                     console.print(f"  [{elem.index:>3}] {elem.label}")
         
-        console.print("\n" + "─" * 90)
+        console.print("\n" + "â”€" * 90)
         console.print(f"[bold]Total: {len(elements)} elements[/bold] | Registry size: {len(self._element_registry)}")
         console.print(f"[dim]Use 'click N' or 'type N \"text\"' where N is the element number[/dim]")
-        console.print(f"[dim]⭐ = Primary action | Numbers persist across scans[/dim]\n")
+        console.print(f"[dim]â­ = Primary action | Numbers persist across scans[/dim]\n")
     
     def rescan(self, preserve_map: bool = True) -> bool:
         """
@@ -846,7 +846,7 @@ class ScanningMixin:
             """)
             
             console.print(f"\n[bold cyan]Element [{selector}] Detailed Info:[/bold cyan]")
-            console.print("─" * 70)
+            console.print("â”€" * 70)
             console.print(f"  [bold]Label:[/bold]   {meta['label']}")
             console.print(f"  [bold]Type:[/bold]    {meta['type']}")
             console.print(f"  [bold]Tag:[/bold]     <{attrs['tag']}>")
@@ -894,7 +894,7 @@ class ScanningMixin:
                         display_val = val[:40] + "..." if len(val) > 40 else val
                         console.print(f"    {key}: {display_val}")
             
-            console.print("\n" + "─" * 70 + "\n")
+            console.print("\n" + "â”€" * 70 + "\n")
             
             self.log_action("element_info", f"[{selector}] {meta['label']}", success=True)
             return True
@@ -972,13 +972,13 @@ class ScanningMixin:
             return False
         
         console.print(f"\n[bold cyan]Found {len(matches)} matching elements:[/bold cyan]")
-        console.print("─" * 70)
+        console.print("â”€" * 70)
         
         for idx, meta in matches:
             score_info = f" ({meta['score']:.2f})" if 'score' in meta else ""
             console.print(f"  [{idx:>3}] {meta['type']:<10} {meta['label']}{score_info}")
         
-        console.print("─" * 70 + "\n")
+        console.print("â”€" * 70 + "\n")
         
         self.log_action("find", f"'{search_term}' -> {len(matches)} results", success=True)
         return True
@@ -1010,7 +1010,7 @@ class ScanningMixin:
         
         type_text = f" ({element_type})" if element_type else ""
         console.print(f"\n[bold cyan]Current Element Map{type_text}:[/bold cyan]")
-        console.print("─" * 70)
+        console.print("â”€" * 70)
         
         # Group by type
         grouped = defaultdict(list)
@@ -1036,7 +1036,7 @@ class ScanningMixin:
             for idx, meta in grouped[elem_type]:
                 console.print(f"  [{idx:>3}] {meta['label']}")
         
-        console.print("\n" + "─" * 70)
+        console.print("\n" + "â”€" * 70)
         console.print(f"[bold]Total: {len(elements_to_show)} elements[/bold]\n")
         
         return True
@@ -1060,7 +1060,7 @@ class ScanningMixin:
         stats = self.get_stats()
         
         console.print("\n[bold cyan]Scanning Statistics:[/bold cyan]")
-        console.print("─" * 50)
+        console.print("â”€" * 50)
         console.print(f"  Total Mapped Elements: {stats['total_elements']}")
         console.print(f"  Registry Size: {stats['registry_size']}")
         console.print(f"  Next Available Index: {stats['next_index']}")
@@ -1070,4 +1070,314 @@ class ScanningMixin:
             for elem_type, count in sorted(stats['types'].items()):
                 console.print(f"    {elem_type}: {count}")
         
-        console.print("─" * 50 + "\n")
+        console.print("â”€" * 50 + "\n")
+
+    # ==================== NEW: Page Information ====================
+    
+    def screenshot(self, filename: str = None) -> bool:
+        """
+        Take a full page screenshot.
+        
+        Args:
+            filename: Optional filename (auto-generated from URL if not provided)
+        
+        Returns:
+            True if screenshot succeeded
+        """
+        try:
+            import os
+            import re
+            from datetime import datetime
+            from urllib.parse import urlparse
+            
+            # Create screenshots folder
+            screenshots_dir = "screenshots"
+            if not os.path.exists(screenshots_dir):
+                os.makedirs(screenshots_dir)
+            
+            # Generate filename from URL if not provided
+            if filename is None:
+                current_url = self.page.url
+                parsed_url = urlparse(current_url)
+                domain = parsed_url.netloc.replace('www.', '')
+                path = parsed_url.path.strip('/')
+                
+                # Clean filename
+                clean_domain = re.sub(r'[^\w\-]', '_', domain)
+                clean_path = re.sub(r'[^\w\-]', '_', path) if path else 'home'
+                
+                # Add timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                if clean_path and clean_path != 'home':
+                    filename = f"{clean_domain}_{clean_path}_{timestamp}.png"
+                else:
+                    filename = f"{clean_domain}_{timestamp}.png"
+            elif not filename.endswith('.png'):
+                filename += '.png'
+            
+            # Full path
+            filepath = os.path.join(screenshots_dir, filename)
+            
+            # Take screenshot
+            self.page.screenshot(path=filepath, full_page=True)
+            
+            console.print(f"[green]âœ“ Screenshot saved:[/green] {filepath}")
+            self.log_action("screenshot", filepath, success=True)
+            return True
+            
+        except Exception as e:
+            console.print(f"[red]Screenshot failed:[/red] {e}")
+            self.log_action("screenshot", str(e), success=False)
+            return False
+    
+    def read_page(self, focus: str = "overview", save: bool = False, max_chars: int = 1500) -> str:
+        """
+        Extract page content with intelligent filtering.
+        
+        Args:
+            focus: What to extract
+                - "overview" - Title, headings, key paragraphs (default, max 1500 chars)
+                - "content" - Full article/text content (max 1500 chars)
+                - "forms" - Form fields, labels, inputs, buttons
+                - "navigation" - Menus, links, site structure
+                - "all" - Everything (max 1500 chars unless specified)
+            save: Whether to save to file (default False)
+            max_chars: Maximum characters to return (default 1500, prevents token overflow)
+        
+        Returns:
+            Extracted text as string (guaranteed <= max_chars)
+        """
+        try:
+            import os
+            import re
+            from datetime import datetime
+            
+            # JavaScript extraction
+            content_data = self.page.evaluate(f"""
+                (focus) => {{
+                    const result = {{
+                        title: document.title || 'Untitled',
+                        url: window.location.href,
+                        focus: focus,
+                        sections: []
+                    }};
+                    
+                    const getImportance = (element) => {{
+                        let score = 0;
+                        const tag = element.tagName.toLowerCase();
+                        
+                        if (/^h[1-6]$/.test(tag)) score = 10 - parseInt(tag[1]);
+                        if (element.closest('main, article, [role="main"]')) score += 5;
+                        if (tag === 'form' || tag === 'input' || tag === 'textarea') score += 8;
+                        if (element.closest('form')) score += 3;
+                        
+                        const rect = element.getBoundingClientRect();
+                        if (rect.top < 500) score += 2;
+                        
+                        const text = element.innerText?.trim() || '';
+                        if (text.length > 100 && text.length < 500) score += 2;
+                        if (text.length > 500) score += 1;
+                        
+                        return score;
+                    }};
+                    
+                    const mainArea = document.querySelector('main, article, [role="main"]') || document.body;
+                    
+                    if (focus === 'forms') {{
+                        const forms = Array.from(document.querySelectorAll('form, input, textarea, select, button'));
+                        const formData = forms.map(el => {{
+                            const label = el.labels?.[0]?.innerText || 
+                                        el.getAttribute('placeholder') || 
+                                        el.getAttribute('aria-label') || 
+                                        el.name || 'unlabeled';
+                            return {{
+                                type: el.tagName.toLowerCase(),
+                                label: label.substring(0, 100),
+                                importance: 10
+                            }};
+                        }});
+                        
+                        result.sections = [{{
+                            level: 1,
+                            title: 'Form Elements',
+                            content: formData.map(f => `[${{f.type}}] ${{f.label}}`),
+                            importance: 10
+                        }}];
+                        
+                    }} else if (focus === 'navigation') {{
+                        const navs = Array.from(document.querySelectorAll('nav, [role="navigation"], header'));
+                        const links = navs.flatMap(nav => 
+                            Array.from(nav.querySelectorAll('a')).map(a => a.innerText.trim())
+                        ).filter(t => t.length > 0 && t.length < 50);
+                        
+                        result.sections = [{{
+                            level: 1,
+                            title: 'Navigation',
+                            content: links,
+                            importance: 8
+                        }}];
+                        
+                    }} else {{
+                        const sections = [];
+                        let currentSection = null;
+                        
+                        const elements = Array.from(mainArea.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div, ul, ol, blockquote, article, section'));
+                        
+                        const contentElements = elements.filter(el => {{
+                            if (el.closest('nav, header, footer, .ad, [role="navigation"], aside')) return false;
+                            
+                            const tag = el.tagName.toLowerCase();
+                            if (/^h[1-6]$/.test(tag)) return el.innerText.trim().length > 0;
+                            
+                            return (el.innerText?.trim() || '').length >= 10;
+                        }});
+                        
+                        const processedElements = new Set();
+                        
+                        for (const el of contentElements) {{
+                            if (processedElements.has(el)) continue;
+                            
+                            const tagName = el.tagName.toLowerCase();
+                            const importance = getImportance(el);
+                            
+                            if (/^h[1-6]$/.test(tagName)) {{
+                                const level = parseInt(tagName[1]);
+                                const text = el.innerText.trim();
+                                
+                                if (text.length > 0) {{
+                                    currentSection = {{
+                                        level: level,
+                                        title: text,
+                                        content: [],
+                                        importance: importance
+                                    }};
+                                    sections.push(currentSection);
+                                    processedElements.add(el);
+                                }}
+                            }} else {{
+                                let text = el.innerText.trim();
+                                
+                                const children = Array.from(el.querySelectorAll('*'));
+                                if (children.some(child => processedElements.has(child))) continue;
+                                
+                                if (text.length >= 10) {{
+                                    if (!currentSection) {{
+                                        currentSection = {{
+                                            level: 1,
+                                            title: 'Content',
+                                            content: [],
+                                            importance: 5
+                                        }};
+                                        sections.push(currentSection);
+                                    }}
+                                    
+                                    currentSection.content.push({{
+                                        text: text,
+                                        importance: importance
+                                    }});
+                                    
+                                    processedElements.add(el);
+                                    children.forEach(child => processedElements.add(child));
+                                }}
+                            }}
+                        }}
+                        
+                        if (focus === 'overview') {{
+                            sections.sort((a, b) => b.importance - a.importance);
+                        }}
+                        
+                        result.sections = sections;
+                    }}
+                    
+                    return result;
+                }}
+            """, focus)
+            
+            if not content_data or len(content_data.get('sections', [])) == 0:
+                console.print("[yellow]No content found[/yellow]")
+                return "No content found on page"
+            
+            # Build markdown
+            lines = []
+            lines.append(f"# {content_data['title']}\n\n")
+            lines.append(f"**Source:** {content_data['url']}\n")
+            lines.append(f"**Focus:** {focus}\n")
+            lines.append(f"**Extracted:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            lines.append("---\n\n")
+            
+            total_chars = 0
+            sections_included = 0
+            
+            # Build content up to max_chars limit
+            for section in content_data['sections']:
+                if focus == "overview" and section.get('importance', 0) < 5:
+                    continue
+                
+                # Stop if we're approaching the limit
+                if total_chars > max_chars - 200:  # Leave room for truncation message
+                    break
+                
+                level = section['level']
+                title = section['title']
+                content = section['content']
+                
+                lines.append(f"{'#' * level} {title}\n\n")
+                
+                for item in content:
+                    # Check limit before adding each item
+                    if total_chars > max_chars - 200:
+                        break
+                    
+                    if isinstance(item, dict):
+                        text = item['text']
+                        importance = item.get('importance', 0)
+                        
+                        if focus == "overview" and importance < 3:
+                            continue
+                    else:
+                        text = item
+                    
+                    if len(text.strip()) >= 10:
+                        clean = ' '.join(text.split())
+                        lines.append(f"{clean}\n\n")
+                        total_chars += len(clean)
+                
+                sections_included += 1
+            
+            result_text = ''.join(lines)
+            
+            # HARD LIMIT - truncate if still too long
+            if len(result_text) > max_chars:
+                result_text = result_text[:max_chars]
+                result_text += f"\n\n*[Truncated at {max_chars} chars to prevent token overflow]*"
+            
+            # Optional file save (save FULL content, not truncated)
+            if save:
+                exports_dir = "text_exports"
+                if not os.path.exists(exports_dir):
+                    os.makedirs(exports_dir)
+                
+                url_clean = re.sub(r'^https?://', '', content_data['url'])
+                url_clean = re.sub(r'[^\w\-_.]', '_', url_clean)
+                url_clean = re.sub(r'_+', '_', url_clean).strip('_')[:100]
+                
+                filename = f"{url_clean}_{focus}.md"
+                filepath = os.path.join(exports_dir, filename)
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(result_text)
+                
+                console.print(f"[green]âœ“ Saved:[/green] {filepath}")
+            
+            console.print(f"[green]âœ“ Extracted {len(result_text)} chars ({sections_included} sections)[/green]")
+            self.log_action("read_page", f"{focus} - {len(result_text)} chars", success=True)
+            
+            return result_text
+            
+        except Exception as e:
+            console.print(f"[red]Failed to read page:[/red] {e}")
+            import traceback
+            error_logger.debug(traceback.format_exc())
+            self.log_action("read_page", str(e), success=False)
+            return f"Error reading page: {e}"
