@@ -727,14 +727,12 @@ class ScanningMixin:
         """Display scan results with advanced formatting."""
         filter_text = f" ({filter_type})" if filter_type else ""
         mode_text = " [SMART]" if smart_mode else ""
-        score_text = f" [scoreâ‰¥{min_score:.1f}]" if min_score > 0 else ""
+        score_text = f" [score{min_score:.1f}]" if min_score > 0 else ""
         
         console.print(f"\n[bold cyan]SCAN RESULTS{filter_text}{mode_text}{score_text}[/bold cyan]")
-        console.print("â”€" * 90)
         
         if not elements:
             console.print("[yellow]No interactive elements found[/yellow]")
-            console.print("â”€" * 90)
             return
         
         # Group by type
@@ -775,10 +773,9 @@ class ScanningMixin:
                 else:
                     console.print(f"  [{elem.index:>3}] {elem.label}")
         
-        console.print("\n" + "â”€" * 90)
         console.print(f"[bold]Total: {len(elements)} elements[/bold] | Registry size: {len(self._element_registry)}")
         console.print(f"[dim]Use 'click N' or 'type N \"text\"' where N is the element number[/dim]")
-        console.print(f"[dim]â­ = Primary action | Numbers persist across scans[/dim]\n")
+        console.print(f"[dim] = Primary action | Numbers persist across scans[/dim]\n")
     
     def rescan(self, preserve_map: bool = True) -> bool:
         """
@@ -846,7 +843,6 @@ class ScanningMixin:
             """)
             
             console.print(f"\n[bold cyan]Element [{selector}] Detailed Info:[/bold cyan]")
-            console.print("â”€" * 70)
             console.print(f"  [bold]Label:[/bold]   {meta['label']}")
             console.print(f"  [bold]Type:[/bold]    {meta['type']}")
             console.print(f"  [bold]Tag:[/bold]     <{attrs['tag']}>")
@@ -894,7 +890,6 @@ class ScanningMixin:
                         display_val = val[:40] + "..." if len(val) > 40 else val
                         console.print(f"    {key}: {display_val}")
             
-            console.print("\n" + "â”€" * 70 + "\n")
             
             self.log_action("element_info", f"[{selector}] {meta['label']}", success=True)
             return True
@@ -972,13 +967,10 @@ class ScanningMixin:
             return False
         
         console.print(f"\n[bold cyan]Found {len(matches)} matching elements:[/bold cyan]")
-        console.print("â”€" * 70)
-        
         for idx, meta in matches:
             score_info = f" ({meta['score']:.2f})" if 'score' in meta else ""
             console.print(f"  [{idx:>3}] {meta['type']:<10} {meta['label']}{score_info}")
         
-        console.print("â”€" * 70 + "\n")
         
         self.log_action("find", f"'{search_term}' -> {len(matches)} results", success=True)
         return True
@@ -1010,7 +1002,6 @@ class ScanningMixin:
         
         type_text = f" ({element_type})" if element_type else ""
         console.print(f"\n[bold cyan]Current Element Map{type_text}:[/bold cyan]")
-        console.print("â”€" * 70)
         
         # Group by type
         grouped = defaultdict(list)
@@ -1036,7 +1027,6 @@ class ScanningMixin:
             for idx, meta in grouped[elem_type]:
                 console.print(f"  [{idx:>3}] {meta['label']}")
         
-        console.print("\n" + "â”€" * 70)
         console.print(f"[bold]Total: {len(elements_to_show)} elements[/bold]\n")
         
         return True
@@ -1060,7 +1050,6 @@ class ScanningMixin:
         stats = self.get_stats()
         
         console.print("\n[bold cyan]Scanning Statistics:[/bold cyan]")
-        console.print("â”€" * 50)
         console.print(f"  Total Mapped Elements: {stats['total_elements']}")
         console.print(f"  Registry Size: {stats['registry_size']}")
         console.print(f"  Next Available Index: {stats['next_index']}")
@@ -1070,7 +1059,6 @@ class ScanningMixin:
             for elem_type, count in sorted(stats['types'].items()):
                 console.print(f"    {elem_type}: {count}")
         
-        console.print("â”€" * 50 + "\n")
 
     # ==================== NEW: Page Information ====================
     
@@ -1122,7 +1110,7 @@ class ScanningMixin:
             # Take screenshot
             self.page.screenshot(path=filepath, full_page=True)
             
-            console.print(f"[green]âœ“ Screenshot saved:[/green] {filepath}")
+            console.print(f"[green] Screenshot saved:[/green] {filepath}")
             self.log_action("screenshot", filepath, success=True)
             return True
             
@@ -1368,9 +1356,9 @@ class ScanningMixin:
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(result_text)
                 
-                console.print(f"[green]âœ“ Saved:[/green] {filepath}")
+                console.print(f"[green] Saved:[/green] {filepath}")
             
-            console.print(f"[green]âœ“ Extracted {len(result_text)} chars ({sections_included} sections)[/green]")
+            console.print(f"[green] Extracted {len(result_text)} chars ({sections_included} sections)[/green]")
             self.log_action("read_page", f"{focus} - {len(result_text)} chars", success=True)
             
             return result_text

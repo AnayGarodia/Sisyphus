@@ -1,54 +1,86 @@
 /**
- * Sisyphus Landing Page - Interactive Functionality
+ * Sisyphus Landing - Interactive with Parallax & Dark Mode
+ * Synced theme system across landing and app
  */
 
-class LandingPage {
+class SisyphusLanding {
   constructor() {
     this.modals = {
       waitlist: document.getElementById("waitlistModal"),
       contact: document.getElementById("contactModal"),
-      demo: document.getElementById("demoModal"),
     };
 
     this.toast = document.getElementById("successToast");
-    this.loadingScreen = document.getElementById("loadingScreen");
-    this.mainContent = document.getElementById("mainContent");
+    this.nav = document.querySelector("nav");
+
+    // Parallax elements
+    this.parallaxFigure = document.querySelector(".parallax-figure");
 
     this.init();
   }
 
   init() {
-    this.setupLoadingAnimation();
+    this.setupTheme();
     this.setupButtonListeners();
     this.setupModalListeners();
     this.setupFormListeners();
     this.setupSmoothScroll();
+    this.setupParallaxScroll();
+    this.setupNavScroll();
   }
 
-  setupLoadingAnimation() {
-    window.addEventListener("load", () => {
-      setTimeout(() => {
-        this.loadingScreen.classList.add("slide-up");
+  setupTheme() {
+    // Use the same localStorage key as app.js for consistency
+    const savedTheme = localStorage.getItem("sisyphus-theme");
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    ).matches;
 
-        setTimeout(() => {
-          this.mainContent.classList.add("visible");
-        }, 400);
+    if (savedTheme === "dark" || (!savedTheme && prefersDark)) {
+      document.body.classList.add("dark-theme");
+    }
 
-        setTimeout(() => {
-          this.loadingScreen.style.display = "none";
-        }, 1200);
-      }, 2500);
-    });
+    this.updateThemeIcon();
+  }
+
+  toggleTheme() {
+    document.body.classList.toggle("dark-theme");
+    const theme = document.body.classList.contains("dark-theme")
+      ? "dark"
+      : "light";
+    // Use the same localStorage key as app.js
+    localStorage.setItem("sisyphus-theme", theme);
+    this.updateThemeIcon();
+  }
+
+  updateThemeIcon() {
+    const themeToggle = document.querySelector(".theme-toggle-nav");
+    if (!themeToggle) return;
+
+    const isDark = document.body.classList.contains("dark-theme");
+    themeToggle.innerHTML = isDark
+      ? `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"/>
+      </svg>`
+      : `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>`;
   }
 
   setupButtonListeners() {
+    // Theme toggle
+    const themeToggle = document.querySelector(".theme-toggle-nav");
+    if (themeToggle) {
+      themeToggle.addEventListener("click", () => this.toggleTheme());
+    }
+
     // Launch Platform buttons
     const launchButtons = [
       document.getElementById("navLaunchBtn"),
       document.getElementById("heroGetStartedBtn"),
       document.getElementById("ctaLaunchBtn"),
       document.getElementById("footerLaunchLink"),
-      document.getElementById("demoTryNowBtn"),
     ];
 
     launchButtons.forEach((btn) => {
@@ -57,30 +89,23 @@ class LandingPage {
       }
     });
 
-    // Demo buttons
-    const demoButtons = [
-      document.getElementById("heroDemoBtn"),
-      document.getElementById("demoPlayBtn"),
-    ];
+    // Docs button
+    const docsBtn = document.getElementById("heroDocsBtn");
+    if (docsBtn) {
+      docsBtn.addEventListener("click", () => {
+        document.getElementById("how")?.scrollIntoView({
+          behavior: "smooth",
+        });
+      });
+    }
 
-    demoButtons.forEach((btn) => {
-      if (btn) {
-        btn.addEventListener("click", () => this.openModal("demo"));
-      }
-    });
-
-    // Action cards
-    document.getElementById("waitlistBtn")?.addEventListener("click", () => {
-      this.openModal("waitlist");
-    });
-
-    document.getElementById("contactBtn")?.addEventListener("click", () => {
-      this.openModal("contact");
-    });
-
-    document.getElementById("productDemoBtn")?.addEventListener("click", () => {
-      this.openModal("demo");
-    });
+    // Contact sales
+    document
+      .getElementById("contactSalesBtn")
+      ?.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.openModal("contact");
+      });
 
     // Footer contact
     document
@@ -134,12 +159,66 @@ class LandingPage {
   setupSmoothScroll() {
     document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
       anchor.addEventListener("click", (e) => {
-        e.preventDefault();
-        const target = document.querySelector(anchor.getAttribute("href"));
-        if (target) {
-          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        const href = anchor.getAttribute("href");
+        if (href && href !== "#") {
+          e.preventDefault();
+          const target = document.querySelector(href);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         }
       });
+    });
+  }
+
+  setupParallaxScroll() {
+    let ticking = false;
+
+    window.addEventListener("scroll", () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          this.updateParallax();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+
+    // Initial position
+    this.updateParallax();
+  }
+
+  updateParallax() {
+    const scrolled = window.pageYOffset;
+    const windowHeight = window.innerHeight;
+
+    // Only apply parallax effect in the hero section
+    if (scrolled < windowHeight * 1.5) {
+      const progress = Math.min(scrolled / windowHeight, 1);
+
+      // Figure moves upward as you scroll (climbing the hill)
+      if (this.parallaxFigure) {
+        const figureMovement = -scrolled * 0.6;
+        const figureOpacity = Math.max(0.12, 0.5 - progress * 0.35);
+        this.parallaxFigure.style.transform = `translateY(${figureMovement}px)`;
+        this.parallaxFigure.style.opacity = figureOpacity;
+      }
+    }
+  }
+
+  setupNavScroll() {
+    let lastScroll = 0;
+
+    window.addEventListener("scroll", () => {
+      const currentScroll = window.pageYOffset;
+
+      if (currentScroll > 100) {
+        this.nav.classList.add("scrolled");
+      } else {
+        this.nav.classList.remove("scrolled");
+      }
+
+      lastScroll = currentScroll;
     });
   }
 
@@ -167,18 +246,13 @@ class LandingPage {
   }
 
   handleLaunch() {
-    // Check if running on same server
-    const currentHost = window.location.host;
-
-    // Try to navigate to /app route
+    // Navigate to /app route
     window.location.href = "/app";
 
-    // If app route doesn't exist, show message
+    // Fallback: if app route doesn't exist, show waitlist
     setTimeout(() => {
       if (window.location.pathname !== "/app") {
-        this.showToast(
-          "Platform launching soon! Join the waitlist to get notified."
-        );
+        this.showToast("We're launching soon! Join the waitlist?");
         setTimeout(() => {
           this.openModal("waitlist");
         }, 2000);
@@ -189,20 +263,13 @@ class LandingPage {
   async handleWaitlistSubmit(form) {
     const formData = new FormData(form);
     const data = {
-      name:
-        formData.get("name") || form.querySelector('input[type="text"]').value,
-      email:
-        formData.get("email") ||
-        form.querySelector('input[type="email"]').value,
-      company:
-        formData.get("company") ||
-        form.querySelectorAll('input[type="text"]')[1]?.value ||
-        "",
-      useCase:
-        formData.get("useCase") || form.querySelector("textarea")?.value || "",
+      name: formData.get("name"),
+      email: formData.get("email"),
+      company: formData.get("company") || "",
+      useCase: formData.get("useCase") || "",
     };
 
-    // Simulate API call
+    // Log submission
     console.log("Waitlist submission:", data);
 
     // Show loading state
@@ -219,9 +286,7 @@ class LandingPage {
     submitBtn.disabled = false;
 
     this.closeModal("waitlistModal");
-    this.showToast(
-      `Thanks ${data.name}! You're on the waitlist. We'll be in touch soon! `
-    );
+    this.showToast(`Thanks ${data.name}! We'll be in touch soon.`);
 
     form.reset();
   }
@@ -229,20 +294,13 @@ class LandingPage {
   async handleContactSubmit(form) {
     const formData = new FormData(form);
     const data = {
-      name:
-        formData.get("name") || form.querySelector('input[type="text"]').value,
-      email:
-        formData.get("email") ||
-        form.querySelector('input[type="email"]').value,
-      subject:
-        formData.get("subject") ||
-        form.querySelectorAll('input[type="text"]')[1]?.value ||
-        "",
-      message:
-        formData.get("message") || form.querySelector("textarea")?.value || "",
+      name: formData.get("name"),
+      email: formData.get("email"),
+      company: formData.get("company"),
+      message: formData.get("message"),
     };
 
-    // Simulate API call
+    // Log submission
     console.log("Contact form submission:", data);
 
     // Show loading state
@@ -259,9 +317,7 @@ class LandingPage {
     submitBtn.disabled = false;
 
     this.closeModal("contactModal");
-    this.showToast(
-      `Message sent! We'll get back to you within 24 hours, ${data.name}! ️`
-    );
+    this.showToast(`Thanks ${data.name}! We'll get back to you soon.`);
 
     form.reset();
   }
@@ -280,5 +336,5 @@ class LandingPage {
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
-  window.landingPage = new LandingPage();
+  window.sisyphusLanding = new SisyphusLanding();
 });

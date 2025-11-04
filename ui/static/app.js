@@ -2,6 +2,7 @@
  * ============================================
  * Sisyphus Agent Application
  * Professional WebSocket-based AI agent interface
+ * FIXED: Immediate stop button response
  * ============================================
  */
 
@@ -68,7 +69,7 @@ class SisyphusAgent {
    * Initialize the application
    */
   init() {
-    console.log(" Initializing Sisyphus Agent...");
+    console.log("🚀 Initializing Sisyphus Agent...");
 
     this.setupEventListeners();
     this.setupTheme();
@@ -76,7 +77,7 @@ class SisyphusAgent {
     this.connect();
     this.startPerformanceMonitoring();
 
-    console.log(" Sisyphus Agent initialized successfully");
+    console.log("✅ Sisyphus Agent initialized successfully");
   }
 
   /**
@@ -116,8 +117,17 @@ class SisyphusAgent {
       }
     });
 
-    // Stop button
-    this.elements.stopButton?.addEventListener("click", () => this.stopTask());
+    // Stop button - FIXED: Use capture phase for immediate response
+    this.elements.stopButton?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("🛑🛑🛑 STOP BUTTON CLICKED - SENDING IMMEDIATELY");
+        this.stopTask();
+      },
+      true
+    ); // Use capture phase!
 
     // Chat input handling
     this.elements.chatInput?.addEventListener("keydown", (e) => {
@@ -165,6 +175,7 @@ class SisyphusAgent {
       // Escape: Stop task
       if (e.key === "Escape" && this.taskRunning) {
         e.preventDefault();
+        console.log("🛑 ESC pressed - stopping task");
         this.stopTask();
       }
 
@@ -324,7 +335,7 @@ class SisyphusAgent {
    */
   handleVisibilityChange() {
     if (document.hidden) {
-      console.log(" Page hidden, pausing updates");
+      console.log("🔴 Page hidden, pausing updates");
     } else {
       console.log("🟢 Page visible, resuming updates");
       // Reconnect if disconnected while hidden
@@ -351,13 +362,13 @@ class SisyphusAgent {
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     this.updateStatus("Connecting...", false);
-    console.log(" Connecting to:", wsUrl);
+    console.log("🔌 Connecting to:", wsUrl);
 
     try {
       this.ws = new WebSocket(wsUrl);
       this.setupWebSocketHandlers();
     } catch (error) {
-      console.error(" WebSocket creation failed:", error);
+      console.error("❌ WebSocket creation failed:", error);
       this.handleConnectionError(error);
     }
   }
@@ -371,7 +382,7 @@ class SisyphusAgent {
     this.ws.onopen = () => this.handleOpen();
     this.ws.onmessage = (event) => this.handleMessage(event);
     this.ws.onerror = (error) => {
-      console.error(" WebSocket error:", error);
+      console.error("❌ WebSocket error:", error);
       this.handleConnectionError(error);
     };
     this.ws.onclose = (event) => this.handleClose(event);
@@ -381,7 +392,7 @@ class SisyphusAgent {
    * Handle WebSocket open
    */
   handleOpen() {
-    console.log(" WebSocket connected");
+    console.log("✅ WebSocket connected");
     this.connected = true;
     this.reconnectAttempts = 0;
     this.updateStatus("Connected", true);
@@ -398,7 +409,7 @@ class SisyphusAgent {
   handleMessage(event) {
     try {
       const message = JSON.parse(event.data);
-      console.log(" Received:", message.type);
+      console.log("📨 Received:", message.type);
 
       // Message type handlers
       const handlers = {
@@ -418,10 +429,10 @@ class SisyphusAgent {
       if (handler) {
         handler();
       } else {
-        console.warn("️ Unknown message type:", message.type);
+        console.warn("⚠️ Unknown message type:", message.type);
       }
     } catch (error) {
-      console.error(" Message parsing error:", error);
+      console.error("❌ Message parsing error:", error);
       this.addTerminalLine(`Error parsing message: ${error.message}`, "error");
     }
   }
@@ -430,7 +441,7 @@ class SisyphusAgent {
    * Handle WebSocket close
    */
   handleClose(event) {
-    console.log(" WebSocket closed:", event.code, event.reason);
+    console.log("🔌 WebSocket closed:", event.code, event.reason);
     this.connected = false;
     this.updateStatus("Disconnected", false);
     this.updateSendButtonState();
@@ -497,11 +508,11 @@ class SisyphusAgent {
    * Handle command message
    */
   handleCommand(message) {
-    this.addCommand(message.step, message.command, message.reasoning);
+    this.addCommand(message.step, message.command, message.thinking);
     this.addTerminalLine(`[Step ${message.step}] ${message.command}`);
 
-    if (message.reasoning) {
-      this.addTerminalLine(`  → ${message.reasoning}`);
+    if (message.thinking) {
+      this.addTerminalLine(`  → ${message.thinking}`);
     }
   }
 
@@ -528,7 +539,7 @@ class SisyphusAgent {
   handleCommandHistory(message) {
     if (message.commands && Array.isArray(message.commands)) {
       console.log(
-        " Command history updated:",
+        "📋 Command history updated:",
         message.commands.length,
         "commands"
       );
@@ -539,7 +550,7 @@ class SisyphusAgent {
    * Handle stream started
    */
   onStreamStarted(fps) {
-    console.log(` Stream started at ${fps} FPS`);
+    console.log(`📹 Stream started at ${fps} FPS`);
     this.addTerminalLine(
       `Browser stream started at ${fps || 60} FPS`,
       "success"
@@ -550,7 +561,7 @@ class SisyphusAgent {
    * Handle stream stopped
    */
   onStreamStopped() {
-    console.log(" Stream stopped");
+    console.log("⏹️ Stream stopped");
     this.hideBrowser();
     this.addTerminalLine("Browser stream stopped");
   }
@@ -564,11 +575,16 @@ class SisyphusAgent {
    */
   send(message) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-      console.log(" Sent:", message.type);
-      return true;
+      try {
+        this.ws.send(JSON.stringify(message));
+        console.log("📤 Sent:", message.type);
+        return true;
+      } catch (error) {
+        console.error("❌ Failed to send message:", error);
+        return false;
+      }
     } else {
-      console.error(" Cannot send - not connected");
+      console.error("❌ Cannot send - WebSocket state:", this.ws?.readyState);
       this.addTerminalLine(
         "Cannot send message - not connected to server",
         "error"
@@ -639,11 +655,41 @@ class SisyphusAgent {
   }
 
   /**
-   * Stop current task
+   * Stop current task - FIXED: Immediate sending
    */
   stopTask() {
+    console.log("🛑🛑🛑 stopTask() called");
+
+    // Check if task is actually running
+    if (!this.taskRunning) {
+      console.log("⚠️ No task running, ignoring stop");
+      return;
+    }
+
+    // Add terminal feedback IMMEDIATELY
     this.addTerminalLine("Stopping task...", "error");
-    this.send({ type: "stop_task" });
+
+    // Send stop message with IMMEDIATE priority
+    const stopMessage = { type: "stop_task" };
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        // Send immediately - don't queue
+        this.ws.send(JSON.stringify(stopMessage));
+        console.log("✅ Stop message sent immediately");
+      } catch (error) {
+        console.error("❌ Failed to send stop:", error);
+      }
+    } else {
+      console.error(
+        "❌ Cannot stop - WebSocket not open:",
+        this.ws?.readyState
+      );
+    }
+
+    // Update UI immediately (don't wait for server response)
+    this.taskRunning = false;
+    this.updateButtonStates(false);
   }
 
   // ============================================
@@ -654,6 +700,7 @@ class SisyphusAgent {
    * Handle task start
    */
   onTaskStart(task) {
+    console.log("▶️ Task started:", task);
     this.taskRunning = true;
     this.updateButtonStates(true);
 
@@ -665,6 +712,7 @@ class SisyphusAgent {
    * Handle task end
    */
   onTaskEnd() {
+    console.log("⏹️ Task ended");
     this.taskRunning = false;
     this.updateButtonStates(false);
 
@@ -868,7 +916,7 @@ class SisyphusAgent {
   /**
    * Add command to history
    */
-  addCommand(step, command, reasoning) {
+  addCommand(step, command, thinking) {
     if (!this.elements.commandsList) return;
 
     // Remove empty state if present
@@ -892,8 +940,8 @@ class SisyphusAgent {
       </div>
       <div class="command-text">${this.escapeHtml(command)}</div>
       ${
-        reasoning
-          ? `<div class="command-reasoning">${this.escapeHtml(reasoning)}</div>`
+        thinking
+          ? `<div class="command-reasoning">${this.escapeHtml(thinking)}</div>`
           : ""
       }
     `;
@@ -996,7 +1044,7 @@ class SisyphusAgent {
 
 // Initialize when DOM is ready
 document.addEventListener("DOMContentLoaded", () => {
-  console.log(" DOM loaded, initializing Sisyphus Agent...");
+  console.log("🚀 DOM loaded, initializing Sisyphus Agent...");
 
   // Create global instance
   window.sisyphusAgent = new SisyphusAgent();
